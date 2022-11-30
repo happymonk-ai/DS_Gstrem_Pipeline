@@ -10,9 +10,6 @@ Data = {
 }  
 Activity = [ "walking" , "standing" , "riding a bike" , "talking", "running", "climbing ladder"]
 
-"""
-
-"""
 metapeople ={
                     "type":{" 00: known whitelist, 01: known blacklist, 10: unknown first time, 11: unknown repeat"},
                     "track":{" 0: tracking OFF, 1: tracking ON"},

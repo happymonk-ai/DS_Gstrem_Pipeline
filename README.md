@@ -1,6 +1,5 @@
 # DS_Gstrem_Pipeline
 
-"""
 Json Object For a Batch Video 
 
 JsonObjectBatch= {ID , TimeStamp , {Data} } 
@@ -42,5 +41,4 @@ metapeople ={
                 "geo":str(Geo_location),
                 "metaData": metaBatch}
     print(primary)
-    
-"""
+

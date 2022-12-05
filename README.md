@@ -1,12 +1,11 @@
 # DS_Gstrem_Pipeline
 
-Json Object For a Batch Video 
+<h3>Json Object For a Batch Video</h3> 
 
-JsonObjectBatch= {ID , TimeStamp , {Data} } 
-Data = {
-    "person" : [ Device Id , [Re-Id] , [Frame TimeStamp] , [Lat , Lon], [Person_count] ,[Activity] ]
-    "car":[ Device ID, [Lp Number] , [Frame TimeStamp] , [Lat , lon] ]
-}  
+<h3>JsonObjectBatch= {ID , TimeStamp , {Data}} 
+Data = {"person" : [ Device Id , [Re-Id] , [Frame TimeStamp] , [Lat , Lon], [Person_count] ,[Activity] ]
+    "car":[ Device ID, [Lp Number] , [Frame TimeStamp] , [Lat , lon] ]}
+    
 Activity = [ "walking" , "standing" , "riding a bike" , "talking", "running", "climbing ladder"]
 
 metapeople ={
@@ -41,4 +40,4 @@ metapeople ={
                 "geo":str(Geo_location),
                 "metaData": metaBatch}
     print(primary)
-
+</h3>

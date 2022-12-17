@@ -24,6 +24,7 @@ from general import (check_requirements_pipeline)
 import logging 
 import threading
 import gc
+import datetime #datetime module to fetch current time when frame is detected
 
 #Detection
 from track import run
@@ -55,6 +56,8 @@ path = "./Nats_output"
 
 if os.path.exists(path) is False:
     os.mkdir(path)
+
+iterator = 1
     
 # Multi-threading
 TOLERANCE = 0.62
@@ -98,7 +101,7 @@ video_model = video_model.eval().to(device)
 # Initializes Gstreamer, it's variables, paths
 Gst.init(sys.argv)
 image_arr = None
-device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.265', 'h.264']
+device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.264', 'h.265']
 load_dotenv()
 
 # activity
@@ -175,7 +178,7 @@ async def ava_inference_transform(
     return clip, torch.from_numpy(boxes), ori_boxes
 
 async def Activity(source,device_id,source_1):
-    global avg_Batchcount_person
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count
 
     # Create an id to label name mapping
     global count_video            
@@ -334,47 +337,17 @@ async def json_publish(primary):
     print(f'Ack: stream={ack.stream}, sequence={ack.seq}')
     print("Activity is getting published")
 
-async def Video_creating(path, device_id):
-    image_folder = path
-    video_name = path+'/Nats_video'+str(device_id)+'.mp4'
-    images = [img for img in os.listdir(image_folder) if img.endswith(".jpeg")]
-    frame = cv2.imread(os.path.join(image_folder, images[0]))
-    height, width, layers = frame.shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video = cv2.VideoWriter(video_name, fourcc , 1, (width,height))
-    for image in images:
-        video.write(cv2.imread(os.path.join(image_folder, image)))
-    video.release()
-    Process (target = await Activity(source=video_name,device_id=device_id,source_1=video_name)).start() 
-    await asyncio.sleep(1)
-    
-
-async def batch_save(device_id,time_stamp):
-    global avg_Batchcount_person
+async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
-    count_batch = 0
-    for msg in dict_frame[device_id]:
-        try :
-            im = np.ndarray(
-                    (512,
-                    512),
-                    buffer=np.array(msg),
-                    dtype=np.uint8) 
-            im = Image.fromarray(im)
-            device_path = os.path.join(path,str(device_id))
-            if os.path.exists(device_path) is False:
-                os.mkdir(device_path)
-            im.save(device_path+"/"+str(count_batch)+".jpeg")
-            await asyncio.sleep(1)
-        except TypeError as e:
-            print(TypeError," gstreamer error 64 >> ",e,"Device Id",device_id)
-        count_batch += 1
-    Process(target=await Video_creating(path=device_path, device_id=device_id)).start()
-    await asyncio.sleep(1)
-    if count_batch >= 10 :
-        pattern = device_path+"/**/*.jpeg"
-        for item in glob.iglob(pattern, recursive=True):
-            os.remove(item) 
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count
+
+    video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
+    print(video_name)
+
+    Process (target = await Activity(source=video_name,device_id=device_id,source_1=video_name)).start() 
+
+    ct = datetime.datetime.now() # ct stores current time
+    timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
     metapeople ={
                     "type":str(track_type),
@@ -401,17 +374,15 @@ async def batch_save(device_id,time_stamp):
     
     primary = { "deviceid":str(device_id),
                 "batchid":str(BatchId), 
-                "timestamp":str(time_stamp), 
+                "timestamp":str(timestamp), 
                 "metaData": metaBatch}
     print(primary)
     Process(target= await json_publish(primary=primary)).start()
-    dict_frame[device_id].clear()
-    count_frame[device_id] = 0 
-    detect_count.clear()
+    detect_count = []
     avg_Batchcount_person = []
-    avg_Batchcount_vehicel.clear()
-    track_person.clear()
-    track_vehicle.clear()
+    avg_Batchcount_vehicel = []
+    track_person = []
+    track_vehicle = []
     person_count.clear()
     vehicle_count.clear()
     activity_list.clear()
@@ -419,39 +390,20 @@ async def batch_save(device_id,time_stamp):
     gc.collect()
     torch.cuda.empty_cache()
 
-                
-async def stream_thread(device_id , frame_byte,timestamp) :
-    if len(dict_frame) == 0 :
-        dict_frame[device_id] = list(frame_byte)
-        count_frame[device_id] = 1 
-    else:
-        if device_id in list(dict_frame.keys()):
-            dict_frame[device_id].append(list(frame_byte))
-            count_frame[device_id] += 1
-            if count_frame[device_id] % 10 == 0 :
-                Process(target = await batch_save(device_id=device_id,time_stamp=timestamp)).start()
-                await asyncio.sleep(1)
-        else:
-            dict_frame[device_id] = list(frame_byte)
-            count_frame[device_id] = 1
-    print(count_frame, "count frame ", threading.get_ident(),"Threading Id" ,device_id ,"Device id")
-    await asyncio.sleep(1)
-
-
-async def gst_data(device_id ,frame_byte, timestamp):
+async def gst_data(file_id , device_id):
     global count 
     sem = asyncio.Semaphore(1)
     await sem.acquire()
     try:
         if device_id not in devicesUnique:
-            t = Process(target= await stream_thread(device_id=device_id ,frame_byte=frame_byte, timestamp=timestamp))
+            t = Process(target= await batch_save(device_id=device_id ,file_id=file_id))
             t.start()
             processes.append(t)
             devicesUnique.append(device_id)
         else:
             ind = devicesUnique.index(device_id)
             t = processes[ind]
-            Process(name = t.name, target= await stream_thread(device_id=device_id ,frame_byte=frame_byte, timestamp=timestamp))
+            Process(name = t.name, target= await batch_save(device_id=device_id ,file_id=file_id))
     
     except TypeError as e:
         print(TypeError," gstreamer error 121 >> ", e)
@@ -468,42 +420,32 @@ async def gst_data(device_id ,frame_byte, timestamp):
     logging.critical("The program crashed")
 
 async def gst_stream(device_id, location, device_type):
-    def gst_to_opencv(sample):
-        buf = sample.get_buffer()
-        caps = sample.get_caps()
-            
-        arr = np.ndarray(
-            (caps.get_structure(0).get_value('height'),
-            caps.get_structure(0).get_value('width')),
-            buffer=buf.extract_dup(0, buf.get_size()),
-            dtype=np.uint8)
-
-        return arr
-
-    def new_buffer(sink, data):
-        global image_arr
-        sample = sink.emit("pull-sample")
-        buffer = sample.get_buffer()
-        timestamp = buffer.pts
-        arr = gst_to_opencv(sample)
-        resized = cv2.resize(arr, (512, 512))
-        asyncio.run(gst_data(device_id=data ,frame_byte=resized, timestamp=timestamp))     
-        return Gst.FlowReturn.OK
+    
+    def format_location_callback(mux, file_id, data):
+        global iterator
+        if(file_id == iterator):
+            asyncio.run(gst_data((file_id-1), data))
+            iterator += 1
 
     try:
-        # pipeline = Gst.parse_launch('filesrc location={location} name={device_id} ! decodebin name=decode-{device_id} ! videoconvert name=convert-{device_id} ! videoscale name=scale-{device_id} ! video/x-raw, format=GRAY8, width = 1024, height = 1024 ! appsink name=sink-{device_id}'.format(location=location, device_id=device_id))
+        video_name = path + '/' + str(device_id)
+        print(video_name)
+        if not os.path.exists(video_name):
+            os.makedirs(video_name, exist_ok=True)
+        video_name = path + '/' + str(device_id) + '/Nats_video'+str(device_id)
+        print(video_name)
+    
         if(device_type == "h.264"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} name={device_id} ! queue max-size-buffers=2 ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videoconvert name=convert-{device_id} ! videoscale name=scale-{device_id} ! video/x-raw, format=GRAY8, width = 512, height = 512 ! appsink name=sink-{device_id}'.format(location=location, device_id=device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
         elif(device_type == "h.265"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} name={device_id} ! queue max-size-buffers=2 ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videoconvert name=convert-{device_id} ! videoscale name=scale-{device_id} ! video/x-raw, format=GRAY8, width = 512, height = 512 ! appsink name=sink-{device_id}'.format(location=location, device_id=device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
 
         sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
 
         if not pipeline:
             print("Not all elements could be created.")
         
-        sink.set_property("emit-signals", True)
-        sink.connect("new-sample", new_buffer, device_id)
+        sink.connect("format-location", format_location_callback, device_id)
         
         # Start playing
         ret = pipeline.set_state(Gst.State.PLAYING)

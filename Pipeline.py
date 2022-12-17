@@ -422,10 +422,14 @@ async def gst_data(file_id , device_id):
 async def gst_stream(device_id, location, device_type):
     
     def format_location_callback(mux, file_id, data):
-        global iterator
-        if(file_id == iterator):
+        print(file_id)
+        # global iterator
+        if(file_id == 0):
+            file_id = 4
+            asyncio.run(gst_data((file_id), data))
+        else:
             asyncio.run(gst_data((file_id-1), data))
-            iterator += 1
+        #     iterator += 1
 
     try:
         video_name = path + '/' + str(device_id)
@@ -436,9 +440,9 @@ async def gst_stream(device_id, location, device_type):
         print(video_name)
     
         if(device_type == "h.264"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
         elif(device_type == "h.265"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} name={device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
 
         sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
 

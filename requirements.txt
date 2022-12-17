@@ -163,7 +163,7 @@ pbr==5.4.5
 pexpect==4.6.0
 pickleDB==0.9.2
 pickleshare==0.7.5
-Pillow==9.1.1
+Pillow==9.3.0
 pluggy==1.0.0
 portalocker==2.6.0
 promise==2.3

@@ -49,9 +49,6 @@ from pytorchvideo.models.hub import slow_r50_detection # Another option is slowf
 
 from visualization import VideoVisualizer 
 
-# face_detection
-# import lmdb
-
 path = "./Nats_output"
 
 if os.path.exists(path) is False:

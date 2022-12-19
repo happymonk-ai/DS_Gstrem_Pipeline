@@ -2,13 +2,15 @@
 
 <h3>Json Object For a Batch Video</h3> 
 
-<h3>JsonObjectBatch= {ID , TimeStamp , {Data}} 
-Data = {"person" : [ Device Id , [Re-Id] , [Frame TimeStamp] , [Lat , Lon], [Person_count] ,[Activity] ]
-    "car":[ Device ID, [Lp Number] , [Frame TimeStamp] , [Lat , lon] ]}
+
+<h3>JsonObjectBatch= {ID , TimeStamp , {Data}}</h3>
+
+<h3>Data = {"person" : [ Device Id , [Re-Id] , [Frame TimeStamp] , [Lat , Lon], [Person_count] ,[Activity] ] ,"car":[ Device ID, [Lp Number] , [Frame TimeStamp] , [Lat , lon] </h3>
+
     
 Activity = [ "walking" , "standing" , "riding a bike" , "talking", "running", "climbing ladder"]
 
-metapeople ={
+    metapeople ={
                     "type":{" 00: known whitelist, 01: known blacklist, 10: unknown first time, 11: unknown repeat"},
                     "track":{" 0: tracking OFF, 1: tracking ON"},
                     "id":"face_id",

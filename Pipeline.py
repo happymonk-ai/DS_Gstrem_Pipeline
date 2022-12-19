@@ -512,7 +512,7 @@ async def main():
     # Start pipeline
     pipeline.set_state(Gst.State.PLAYING)
 
-    for i in range(6, 7):
+    for i in range(2, 3):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
         t = Process(target= await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i]))
         t.start()

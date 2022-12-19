@@ -86,12 +86,16 @@ geo_locations = []
 track_person = []
 track_vehicle = []
 batch_person_id = []
+detect_veh_cid = []
+detect_ppl_cid = []
 
 queue1 = Queue()
 queue2 = Queue()
 queue3 = Queue()
 queue4 = Queue()
 queue5 = Queue()
+queue6 = Queue()
+queue7 = Queue()
 
 device = 'cuda' # or 'cpu'
 video_model = slow_r50_detection(True) # Another option is slowfast_r50_detection
@@ -178,7 +182,7 @@ async def ava_inference_transform(
     return clip, torch.from_numpy(boxes), ori_boxes
 
 async def Activity(source,device_id,source_1):
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid
 
     # Create an id to label name mapping
     global count_video            
@@ -247,26 +251,30 @@ async def Activity(source,device_id,source_1):
             video.write(img)
         video.release()
         await asyncio.sleep(1)
-        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5))
+        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7))
         det.start()
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel= queue2.get()
         detect_count= queue3.get()
         track_person = queue4.get()
         track_vehicle = queue5.get()
+        detect_ppl_cid = queue6.get()
+        detect_veh_cid = queue7.get()
         
     except IndexError:
         print("No Activity")
-        activity_list.append("No Activity")
+        # activity_list.append("No Activity")
         open('classes.txt','w')
         await asyncio.sleep(1)
-        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5))
+        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7))
         det.start()
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel = queue2.get()
         detect_count= queue3.get()
         track_person = queue4.get()
         track_vehicle = queue5.get()
+        detect_ppl_cid = queue6.get()
+        detect_veh_cid = queue7.get()
     count_video += 1
 
 
@@ -330,8 +338,8 @@ async def json_publish(primary):
     js = nc.jetstream()
     JSONEncoder = json.dumps(primary)
     json_encoded = JSONEncoder.encode()
-    Subject = "model.activity_v1"
-    Stream_name = "Testing_json"
+    Subject = "sample.activity_json"
+    Stream_name = "Testing_activity"
     await js.add_stream(name= Stream_name, subjects=[Subject])
     ack = await js.publish(Subject, json_encoded)
     print(f'Ack: stream={ack.stream}, sequence={ack.seq}')
@@ -339,7 +347,7 @@ async def json_publish(primary):
 
 async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid
 
     video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
     print(video_name)
@@ -350,15 +358,17 @@ async def batch_save(device_id, file_id):
     timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
     metapeople ={
-                    "type":str(track_type),
-                    "track":str(track_person),
+                    "type":(track_type),
+                    "track":(track_person),
                     "id":batch_person_id,
-                    "activity":{"activities":activity_list}  
+                    "activity":{"activities":activity_list},
+                    "cid":(detect_ppl_cid), 
                     }
     
     metaVehicle = {
-                    "type":str(track_type),
-                    "track":str(track_vehicle),
+                    "type":(track_type),
+                    "track":(track_vehicle),
+                    "cid":(detect_veh_cid),
     }
     metaObj = {
                 "people":metapeople,
@@ -366,15 +376,15 @@ async def batch_save(device_id, file_id):
             }
     
     metaBatch = {
-        "Detect": str(detect_count),
-        "Count": {"people_count":str(avg_Batchcount_person),
-                    "vehicle_count":str(avg_Batchcount_vehicel)} ,
+        "Detect": (detect_count),
+        "Count": {"people_count":(avg_Batchcount_person),
+                    "vehicle_count":(avg_Batchcount_vehicel)} ,
                 "Object":metaObj
     }
     
-    primary = { "deviceid":str(device_id),
-                "batchid":str(BatchId), 
-                "timestamp":str(timestamp), 
+    primary = { "deviceid":(device_id),
+                "batchid":(BatchId), 
+                "timestamp":(timestamp), 
                 "metaData": metaBatch}
     print(primary)
     Process(target= await json_publish(primary=primary)).start()
@@ -386,6 +396,8 @@ async def batch_save(device_id, file_id):
     person_count.clear()
     vehicle_count.clear()
     activity_list.clear()
+    detect_ppl_cid = []
+    detect_veh_cid = []
     os.remove("classes.txt")
     gc.collect()
     torch.cuda.empty_cache()
@@ -500,7 +512,7 @@ async def main():
     # Start pipeline
     pipeline.set_state(Gst.State.PLAYING)
 
-    for i in range(1, 7):
+    for i in range(6, 7):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
         t = Process(target= await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i]))
         t.start()
@@ -528,14 +540,12 @@ if __name__ == '__main__':
         
 """
 Json Object For a Batch Video 
-
 JsonObjectBatch= {ID , TimeStamp , {Data} } 
 Data = {
     "person" : [ Device Id , [Re-Id] , [Frame TimeStamp] , [Lat , Lon], [Person_count] ,[Activity] ]
     "car":[ Device ID, [Lp Number] , [Frame TimeStamp] , [Lat , lon] ]
 }  
 Activity = [ "walking" , "standing" , "riding a bike" , "talking", "running", "climbing ladder"]
-
 """
 
 """

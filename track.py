@@ -17,6 +17,7 @@ import torch.backends.cudnn as cudnn
 from math import ceil
 from PIL import Image
 from multiprocessing import Process, Queue
+import subprocess as sp
 
 import numpy as np
 import cv2 as cv
@@ -85,7 +86,10 @@ track_person = []
 track_vehicle = []
 batch_person_id = []
 detect_count = []
-act_output = []
+detect_file = []
+detect_veh_cid = []
+detect_ppl_cid = []
+detect_image = {}
 
 @torch.no_grad()
 def run(
@@ -95,6 +99,8 @@ def run(
         queue3 = Queue(),
         queue4 = Queue(),
         queue5 = Queue(),
+        queue6 = Queue(),
+        queue7 = Queue(),
         yolo_weights=WEIGHTS / '27Sep_2022.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
@@ -208,7 +214,7 @@ def run(
 
                 # Print results
                 for c in det[:, -1].unique():
-                    global vehicle_count , license
+                    global vehicle_count , license, detect_image
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
                     if names[int(c)] == "Person" :
@@ -253,6 +259,10 @@ def run(
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
                                 crop_img = save_one_box(bboxes, imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
+                                detect_file_path = save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg'
+                                if detect_file_path not in detect_file:
+                                    detect_file.append(str(detect_file_path))
+                                    detect_image = (set(detect_file))
                                 
                                 
                 LOGGER.info(f'{s}Done. yolo:({t3 - t2:.3f}s), {tracking_method}:({t5 - t4:.3f}s)')
@@ -300,7 +310,7 @@ def run(
         
     for iten in avg_Batchcount_person:
         for i in range(int(iten[0])):
-            track_person.append("1")
+            track_person.append(1)
         
     sum_count = 0
     for x in vehicle_count:
@@ -314,24 +324,43 @@ def run(
     
     for iten in avg_Batchcount_vehicel:
         for i in range(int(iten[0])):
-            track_vehicle.append("1")
+            track_vehicle.append(1)
         
     if len(person_count) > 0 or len(vehicle_count) > 0 :
         detect_count.append(1)
     else:
         detect_count.append(0)
+        
+    for item in detect_image:
+        directory1 = os.path.dirname(item)
+        directory2 = os.path.dirname(directory1)
+        directory_name = os.path.basename(os.path.normpath(directory2))
+        if(directory_name == "Vehicle"):
+            command1 = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=item)
+            output1 = sp.getoutput(command1)
+            detect_veh_cid.append(output1)
+        if(directory_name == "Person"):
+            command2 = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=item)
+            output2 = sp.getoutput(command2)
+            detect_ppl_cid.append(output2)
 
     queue1.put(str(avg_Batchcount_person))
     queue2.put(str(avg_Batchcount_vehicel))
     queue3.put(str(detect_count))
     queue4.put(str(track_person))
     queue5.put(str(track_vehicle))
+    queue6.put(str(detect_ppl_cid))
+    queue7.put(str(detect_veh_cid))
 
     avg_Batchcount_person.clear()
     avg_Batchcount_vehicel.clear()
     detect_count.clear()
     track_person.clear()
     track_vehicle.clear()
+    detect_file.clear()
+    detect_ppl_cid.clear()
+    detect_veh_cid.clear()
+    
 
     # Print results
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
@@ -345,4 +374,3 @@ def run(
 
 if __name__ == "__main__":
     run(source="gray_scale.mp4")
-    

@@ -345,12 +345,14 @@ async def json_publish(primary):
 async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
     global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid
-
+    
+    #getting the name of the mp4 file that is been generated
     video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
     print(video_name)
-
+    
     Process (target = await Activity(source=video_name,device_id=device_id,source_1=video_name)).start() 
-
+    
+    #creating json object to publish
     ct = datetime.datetime.now() # ct stores current time
     timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
@@ -432,6 +434,7 @@ async def gst_data(file_id , device_id):
 
 async def gst_stream(device_id, location, device_type):
     
+    #callback function that is been called each time a mp4 file starts to generate
     def format_location_callback(mux, file_id, data):
         print(file_id)
         # global iterator

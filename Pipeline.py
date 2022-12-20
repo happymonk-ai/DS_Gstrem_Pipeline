@@ -381,7 +381,9 @@ async def batch_save(device_id, file_id):
     
     primary = { "deviceid":(device_id),
                 "batchid":(BatchId), 
-                "timestamp":(timestamp), 
+                "timestamp":(timestamp),
+                "geo": {"latitude":'12.913632983105556',
+                        "longitude":'77.58994246818435'}, 
                 "metaData": metaBatch}
     print(primary)
     Process(target= await json_publish(primary=primary)).start()

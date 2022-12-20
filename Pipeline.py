@@ -367,6 +367,8 @@ async def batch_save(device_id, file_id):
     metaVehicle = {
                     "type":(track_type),
                     "track":(track_vehicle),
+                    "id":("Null"),
+                    "activity":("Null"),
                     "cid":(detect_veh_cid),
     }
     metaObj = {
@@ -529,8 +531,6 @@ async def main():
     pipeline.set_state(Gst.State.NULL)
     del pipeline
     
-
-
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     try :

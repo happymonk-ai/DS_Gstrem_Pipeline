@@ -351,7 +351,9 @@ def run(
     queue5.put(str(track_vehicle))
     queue6.put(str(detect_ppl_cid))
     queue7.put(str(detect_veh_cid))
-
+    
+    person_count.clear()
+    vehicle_count.clear()
     avg_Batchcount_person.clear()
     avg_Batchcount_vehicel.clear()
     detect_count.clear()

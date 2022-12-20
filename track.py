@@ -218,12 +218,12 @@ def run(
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
                     if names[int(c)] == "Person" :
-                        print(f"{n}","line 338")
+                        # print(f"{n}","line 338")
                         person_count.append(int(f"{n}"))
-                        print("person detected")
+                        # print("person detected")
                     if names[int(c)] == "Vehicle":
                        vehicle_count.append(int(f"{n}"))
-                       print("vehicel detected")
+                       # print("vehicel detected")
 
                 # pass detections to strongsort
                 t4 = time_sync()

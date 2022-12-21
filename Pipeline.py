@@ -29,6 +29,8 @@ import shutil
 
 #Detection
 from track import run
+from track import lmdb_known
+from track import lmdb_unknown
 
 #PytorchVideo
 from functools import partial
@@ -98,6 +100,8 @@ queue5 = Queue()
 queue6 = Queue()
 queue7 = Queue()
 queue8 = Queue()
+queue9 = Queue()
+queue10 = Queue()
 
 device = 'cuda' # or 'cpu'
 video_model = slow_r50_detection(True) # Another option is slowfast_r50_detection
@@ -254,8 +258,7 @@ async def Activity(source,device_id,source_1):
             video.write(img)
         video.release()
         await asyncio.sleep(1)
-        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8))
-        det.start()
+        run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10)
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel= queue2.get()
         detect_count= queue3.get()
@@ -264,14 +267,15 @@ async def Activity(source,device_id,source_1):
         detect_ppl_cid = queue6.get()
         detect_veh_cid = queue7.get()
         track_dir = queue8.get()
+        track_type = queue9.get()
+        batch_person_id = queue10.get()
         
     except IndexError:
         print("No Activity")
         # activity_list.append("No Activity")
         open('classes.txt','w')
         await asyncio.sleep(1)
-        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8))
-        det.start()
+        run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10)
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel = queue2.get()
         detect_count= queue3.get()
@@ -280,6 +284,8 @@ async def Activity(source,device_id,source_1):
         detect_ppl_cid = queue6.get()
         detect_veh_cid = queue7.get()
         track_dir = queue8.get()
+        track_type = queue9.get()
+        batch_person_id = queue10.get()
     count_video += 1
 
 
@@ -352,21 +358,21 @@ async def json_publish(primary):
 
 async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid,track_dir
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid,track_dir,track_type,batch_person_id
 
     video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
     print(video_name)
 
-    Process (target = await Activity(source=video_name,device_id=device_id,source_1=video_name)).start() 
+    await Activity(source=video_name,device_id=device_id,source_1=video_name)
 
     ct = datetime.datetime.now() # ct stores current time
     timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
-    shutil.rmtree(track_dir)
+    shutil.rmtree('/home/nivetheni/DS_Gstrem_Pipeline/Nats_output/track')
     metapeople ={
                     "type":(track_type),
                     "track":(track_person),
-                    "id":batch_person_id,
+                    "id":(batch_person_id),
                     "activity":{"activities":activity_list},
                     "cid":(detect_ppl_cid), 
                     }
@@ -397,17 +403,19 @@ async def batch_save(device_id, file_id):
                         "longitude":'77.58994246818435'}, 
                 "metaData": metaBatch}
     print(primary)
-    Process(target= await json_publish(primary=primary)).start()
+    await json_publish(primary=primary)
     detect_count = []
     avg_Batchcount_person = []
     avg_Batchcount_vehicel = []
     track_person = []
     track_vehicle = []
-    person_count.clear()
-    vehicle_count.clear()
+    # person_count.clear()
+    # vehicle_count.clear()
     activity_list.clear()
     detect_ppl_cid = []
     detect_veh_cid = []
+    track_type = []
+    batch_person_id = []
     os.remove("classes.txt")
     gc.collect()
     torch.cuda.empty_cache()
@@ -417,15 +425,16 @@ async def gst_data(file_id , device_id):
     sem = asyncio.Semaphore(1)
     await sem.acquire()
     try:
-        if device_id not in devicesUnique:
-            t = Process(target= await batch_save(device_id=device_id ,file_id=file_id))
-            t.start()
-            processes.append(t)
-            devicesUnique.append(device_id)
-        else:
-            ind = devicesUnique.index(device_id)
-            t = processes[ind]
-            Process(name = t.name, target= await batch_save(device_id=device_id ,file_id=file_id))
+        await batch_save(device_id=device_id ,file_id=file_id)
+    #     if device_id not in devicesUnique:
+    #         await batch_save(device_id=device_id ,file_id=file_id)
+    #         # t.start()
+    #         # processes.append(t)
+    #         # devicesUnique.append(device_id)
+    #     else:
+    #         # ind = devicesUnique.index(device_id)
+    #         # t = processes[ind]
+    #        await batch_save(device_id=device_id ,file_id=file_id)
     
     except TypeError as e:
         print(TypeError," gstreamer error 121 >> ", e)
@@ -434,12 +443,12 @@ async def gst_data(file_id , device_id):
         print("done with work ")
         sem.release()
 
-    logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
-    logging.debug("Debug logging test...")
-    logging.info("Program is working as expected")
-    logging.warning("Warning, the program may not function properly")
-    logging.error("The program encountered an error")
-    logging.critical("The program crashed")
+    # logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
+    # logging.debug("Debug logging test...")
+    # logging.info("Program is working as expected")
+    # logging.warning("Warning, the program may not function properly")
+    # logging.error("The program encountered an error")
+    # logging.critical("The program crashed")
 
 async def gst_stream(device_id, location, device_type):
     
@@ -506,6 +515,9 @@ def on_message(bus: Gst.Bus, message: Gst.Message, loop: GLib.MainLoop):
     return True
 
 async def main():
+
+    # await lmdb_known()
+    # await lmdb_unknown()
     
     pipeline = Gst.parse_launch('fakesrc ! queue ! fakesink')
 
@@ -524,8 +536,7 @@ async def main():
 
     for i in range(1, 7):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
-        t = Process(target= await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i]))
-        t.start()
+        await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i])
     
     try:
         loop.run()

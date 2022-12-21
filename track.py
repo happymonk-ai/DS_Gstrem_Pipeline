@@ -101,6 +101,7 @@ def run(
         queue5 = Queue(),
         queue6 = Queue(),
         queue7 = Queue(),
+        queue8 = Queue(),
         yolo_weights=WEIGHTS / '27Sep_2022.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
@@ -351,6 +352,7 @@ def run(
     queue5.put(str(track_vehicle))
     queue6.put(str(detect_ppl_cid))
     queue7.put(str(detect_veh_cid))
+    queue8.put(str(save_dir))
     
     person_count.clear()
     vehicle_count.clear()

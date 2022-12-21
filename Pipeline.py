@@ -29,8 +29,8 @@ import shutil
 
 #Detection
 from track import run
-from track import lmdb_known
-from track import lmdb_unknown
+# from track import lmdb_known
+# from track import lmdb_unknown
 
 #PytorchVideo
 from functools import partial

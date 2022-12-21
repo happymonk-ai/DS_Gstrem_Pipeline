@@ -25,6 +25,7 @@ import logging
 import threading
 import gc
 import datetime #datetime module to fetch current time when frame is detected
+import shutil
 
 #Detection
 from track import run
@@ -48,6 +49,9 @@ from pytorchvideo.data.ava import AvaLabeledVideoFramePaths
 from pytorchvideo.models.hub import slow_r50_detection # Another option is slowfast_r50_detection
 
 from visualization import VideoVisualizer 
+
+# face_detection
+# import lmdb
 
 path = "./Nats_output"
 
@@ -93,6 +97,7 @@ queue4 = Queue()
 queue5 = Queue()
 queue6 = Queue()
 queue7 = Queue()
+queue8 = Queue()
 
 device = 'cuda' # or 'cpu'
 video_model = slow_r50_detection(True) # Another option is slowfast_r50_detection
@@ -102,6 +107,7 @@ video_model = video_model.eval().to(device)
 # Initializes Gstreamer, it's variables, paths
 Gst.init(sys.argv)
 image_arr = None
+
 device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.264', 'h.265']
 load_dotenv()
 
@@ -179,7 +185,7 @@ async def ava_inference_transform(
     return clip, torch.from_numpy(boxes), ori_boxes
 
 async def Activity(source,device_id,source_1):
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid,track_dir
 
     # Create an id to label name mapping
     global count_video            
@@ -211,7 +217,7 @@ async def Activity(source,device_id,source_1):
         # Predicted boxes are of the form List[(x_1, y_1, x_2, y_2)]
         predicted_boxes = await get_person_bboxes(inp_img, predictor) 
         if len(predicted_boxes) == 0: 
-            print("Skipping clip no frames detected at time stamp: ", time_stamp)
+            # print("Skipping clip no frames detected at time stamp: ", time_stamp)
             continue
             
         # Preprocess clip and bounding boxes for video action recognition.
@@ -248,7 +254,7 @@ async def Activity(source,device_id,source_1):
             video.write(img)
         video.release()
         await asyncio.sleep(1)
-        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7))
+        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8))
         det.start()
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel= queue2.get()
@@ -257,13 +263,14 @@ async def Activity(source,device_id,source_1):
         track_vehicle = queue5.get()
         detect_ppl_cid = queue6.get()
         detect_veh_cid = queue7.get()
+        track_dir = queue8.get()
         
     except IndexError:
         print("No Activity")
         # activity_list.append("No Activity")
         open('classes.txt','w')
         await asyncio.sleep(1)
-        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7))
+        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8))
         det.start()
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel = queue2.get()
@@ -272,6 +279,7 @@ async def Activity(source,device_id,source_1):
         track_vehicle = queue5.get()
         detect_ppl_cid = queue6.get()
         detect_veh_cid = queue7.get()
+        track_dir = queue8.get()
     count_video += 1
 
 
@@ -344,18 +352,17 @@ async def json_publish(primary):
 
 async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid
-    
-    #getting the name of the mp4 file that is been generated
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid,track_dir
+
     video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
     print(video_name)
-    
+
     Process (target = await Activity(source=video_name,device_id=device_id,source_1=video_name)).start() 
-    
-    #creating json object to publish
+
     ct = datetime.datetime.now() # ct stores current time
     timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
+    shutil.rmtree(track_dir)
     metapeople ={
                     "type":(track_type),
                     "track":(track_person),
@@ -380,7 +387,7 @@ async def batch_save(device_id, file_id):
         "Detect": (detect_count),
         "Count": {"people_count":(avg_Batchcount_person),
                     "vehicle_count":(avg_Batchcount_vehicel)} ,
-                "Object":metaObj
+        "Object":metaObj
     }
     
     primary = { "deviceid":(device_id),
@@ -436,7 +443,6 @@ async def gst_data(file_id , device_id):
 
 async def gst_stream(device_id, location, device_type):
     
-    #callback function that is been called each time a mp4 file starts to generate
     def format_location_callback(mux, file_id, data):
         print(file_id)
         # global iterator

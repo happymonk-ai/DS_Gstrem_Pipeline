@@ -56,6 +56,7 @@ from visualization import VideoVisualizer
 # import lmdb
 
 path = "./Nats_output"
+hls_path = "./Hls_output"
 
 if os.path.exists(path) is False:
     os.mkdir(path)
@@ -88,9 +89,9 @@ activity_list= []
 geo_locations = []
 track_person = []
 track_vehicle = []
+track_elephant = []
 batch_person_id = []
-detect_veh_cid = []
-detect_ppl_cid = []
+detect_img_cid = []
 
 queue1 = Queue()
 queue2 = Queue()
@@ -189,7 +190,7 @@ async def ava_inference_transform(
     return clip, torch.from_numpy(boxes), ori_boxes
 
 async def Activity(source,device_id,source_1):
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid,track_dir
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir
 
     # Create an id to label name mapping
     global count_video            
@@ -264,11 +265,11 @@ async def Activity(source,device_id,source_1):
         detect_count= queue3.get()
         track_person = queue4.get()
         track_vehicle = queue5.get()
-        detect_ppl_cid = queue6.get()
-        detect_veh_cid = queue7.get()
-        track_dir = queue8.get()
-        track_type = queue9.get()
-        batch_person_id = queue10.get()
+        detect_img_cid = queue6.get()
+        track_dir = queue7.get()
+        track_type = queue8.get()
+        batch_person_id = queue9.get()
+        track_elephant = queue10.get()
         
     except IndexError:
         print("No Activity")
@@ -281,11 +282,11 @@ async def Activity(source,device_id,source_1):
         detect_count= queue3.get()
         track_person = queue4.get()
         track_vehicle = queue5.get()
-        detect_ppl_cid = queue6.get()
-        detect_veh_cid = queue7.get()
-        track_dir = queue8.get()
-        track_type = queue9.get()
-        batch_person_id = queue10.get()
+        detect_img_cid = queue6.get()
+        track_dir = queue7.get()
+        track_type = queue8.get()
+        batch_person_id = queue9.get()
+        track_elephant = queue10.get()
     count_video += 1
 
 
@@ -358,7 +359,7 @@ async def json_publish(primary):
 
 async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,detect_count,detect_ppl_cid,detect_veh_cid,track_dir,track_type,batch_person_id
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir,track_type,batch_person_id
 
     video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
     print(video_name)
@@ -368,32 +369,34 @@ async def batch_save(device_id, file_id):
     ct = datetime.datetime.now() # ct stores current time
     timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
-    shutil.rmtree('/home/nivetheni/DS_Gstrem_Pipeline/Nats_output/track')
     metapeople ={
                     "type":(track_type),
                     "track":(track_person),
                     "id":(batch_person_id),
-                    "activity":{"activities":activity_list},
-                    "cid":(detect_ppl_cid), 
+                    "activity":{"activities":activity_list}
                     }
     
     metaVehicle = {
                     "type":(track_type),
                     "track":(track_vehicle),
                     "id":("Null"),
-                    "activity":("Null"),
-                    "cid":(detect_veh_cid),
-    }
+                    "activity":("Null")
+                    }
+    metaElephant = {
+                    "track":(track_elephant)
+                    }
     metaObj = {
                 "people":metapeople,
-                "vehicle":metaVehicle
+                "vehicle":metaVehicle,
+                "elephant":metaElephant
             }
     
     metaBatch = {
         "Detect": (detect_count),
         "Count": {"people_count":(avg_Batchcount_person),
                     "vehicle_count":(avg_Batchcount_vehicel)} ,
-        "Object":metaObj
+        "Object":metaObj,
+        "Cid":(detect_img_cid)
     }
     
     primary = { "deviceid":(device_id),
@@ -409,14 +412,13 @@ async def batch_save(device_id, file_id):
     avg_Batchcount_vehicel = []
     track_person = []
     track_vehicle = []
-    # person_count.clear()
-    # vehicle_count.clear()
+    track_elephant = []
     activity_list.clear()
-    detect_ppl_cid = []
-    detect_veh_cid = []
+    detect_img_cid = []
     track_type = []
     batch_person_id = []
     os.remove("classes.txt")
+    shutil.rmtree(track_dir)
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -425,16 +427,7 @@ async def gst_data(file_id , device_id):
     sem = asyncio.Semaphore(1)
     await sem.acquire()
     try:
-        await batch_save(device_id=device_id ,file_id=file_id)
-    #     if device_id not in devicesUnique:
-    #         await batch_save(device_id=device_id ,file_id=file_id)
-    #         # t.start()
-    #         # processes.append(t)
-    #         # devicesUnique.append(device_id)
-    #     else:
-    #         # ind = devicesUnique.index(device_id)
-    #         # t = processes[ind]
-    #        await batch_save(device_id=device_id ,file_id=file_id)
+        await batch_save(device_id=device_id ,file_id=file_id)\
     
     except TypeError as e:
         print(TypeError," gstreamer error 121 >> ", e)
@@ -454,26 +447,36 @@ async def gst_stream(device_id, location, device_type):
     
     def format_location_callback(mux, file_id, data):
         print(file_id)
-        # global iterator
+        global iterator
         if(file_id == 0):
             file_id = 4
             asyncio.run(gst_data((file_id), data))
         else:
             asyncio.run(gst_data((file_id-1), data))
-        #     iterator += 1
+            iterator += 1
 
     try:
-        video_name = path + '/' + str(device_id)
+        # filename for mp4
+        video_name1 = path + '/' + str(device_id)
+        print(video_name1)
+        if not os.path.exists(video_name1):
+            os.makedirs(video_name1, exist_ok=True)
+        video_name = video_name1 + '/Nats_video'+str(device_id)
         print(video_name)
-        if not os.path.exists(video_name):
-            os.makedirs(video_name, exist_ok=True)
-        video_name = path + '/' + str(device_id) + '/Nats_video'+str(device_id)
-        print(video_name)
+
+        # filename for hls
+        video_name_hls1 = hls_path + '/' + str(device_id)
+        if not os.path.exists(video_name_hls1):
+            os.makedirs(video_name_hls1, exist_ok=True)
+        video_name_hls = video_name_hls1 + '/Hls_video'+str(device_id)
+        print(video_name_hls)
+
+        # rtspsrc location='rtsp://happymonk:admin123@streams.ckdr.co.in:1554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif' protocols="tcp" ! rtph264depay ! tee name=t t. ! queue ! h264parse ! splitmuxsink location=file-%01d.mp4 max-files=5 max-size-time=10000000000 t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream2 protocols=tcp t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream1 playlist-location=playlist.m3u8 location=segment.%05d.ts target-duration=10 playlist-length=3 max-files=6
     
         if(device_type == "h.264"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! tee name=t t. ! queue ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id} t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream{device_id} protocols=tcp t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
         elif(device_type == "h.265"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} name={device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph265depay name=depay-{device_id} ! tee name=t t. ! queue ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id} t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream{device_id} protocols=tcp t. ! queue ! h265parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x265enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
 
         sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
 
@@ -534,7 +537,7 @@ async def main():
     # Start pipeline
     pipeline.set_state(Gst.State.PLAYING)
 
-    for i in range(1, 7):
+    for i in range(2, 3):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
         await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i])
     

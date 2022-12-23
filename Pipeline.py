@@ -1,109 +1,71 @@
-import argparse
-import asyncio
-
-import os
-# limit the number of cpus used by high performance libraries
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
+# gstreamer
 import sys
-import numpy as np
-from pathlib import Path
-import torch
-import torch.backends.cudnn as cudnn
-from math import ceil
+from io import BytesIO
+import os
+from dotenv import load_dotenv
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst, GObject, GLib
+
+#multi treading 
+import asyncio
+import nats
+import os
+import json
+import numpy as np 
 from PIL import Image
-from multiprocessing import Process, Queue
-import subprocess as sp
+import cv2
 import glob
 from nanoid import generate
-from io import BytesIO
+from multiprocessing import Process, Queue
+import torch
+import torchvision.transforms as T
+from general import (check_requirements_pipeline)
+import logging 
+import threading
+import gc
+import datetime #datetime module to fetch current time when frame is detected
+import shutil
 
-import numpy as np
-import cv2 as cv
-import matplotlib.pyplot as plt
+#Detection
+from track import run
+from track import lmdb_known
+from track import lmdb_unknown
 
-from matplotlib import gridspec
+#PytorchVideo
+from functools import partial
 
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.utils.np_utils import to_categorical
+import detectron2
+from detectron2.config import get_cfg
+from detectron2 import model_zoo
+from detectron2.engine import DefaultPredictor
 
-from keras.applications.resnet import ResNet50 
-#from keras.applications.resnet50 import preprocess_input
-from keras.applications.resnet import preprocess_input 
-from keras.preprocessing.image import img_to_array
-from keras.preprocessing.image import load_img
-from keras.callbacks import ModelCheckpoint
-from keras.models import Model
-from sklearn.utils import shuffle
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
-import cv2
-from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder, LabelEncoder
-from collections import Counter
+import pytorchvideo
+from pytorchvideo.transforms.functional import (
+    uniform_temporal_subsample,
+    short_side_scale_with_boxes,
+    clip_boxes_to_image,
+)
+from torchvision.transforms._functional_video import normalize
+from pytorchvideo.data.ava import AvaLabeledVideoFramePaths
+from pytorchvideo.models.hub import slow_r50_detection # Another option is slowfast_r50_detection
 
-#face_detection
-import lmdb
-# import face_lmdb
-import json
-import face_recognition 
+from visualization import VideoVisualizer 
 
-FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # yolov5 strongsort root directory
-WEIGHTS = ROOT / 'weights'
+# face_detection
+# import lmdb
 
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))  # add ROOT to PATH
-if str(ROOT / 'Detection') not in sys.path:
-    sys.path.append(str(ROOT / 'Detection'))  # add yolov5 ROOT to PATH
-if str(ROOT / 'trackers' / 'strong_sort') not in sys.path:
-    sys.path.append(str(ROOT / 'trackers' / 'strong_sort'))  # add strong_sort ROOT to PATH
+path = "./Nats_output"
+hls_path = "./Hls_output"
 
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+if os.path.exists(path) is False:
+    os.mkdir(path)
 
-import logging
-from Detection.models.common import DetectMultiBackend
-from Detection.utils.dataloaders import VID_FORMATS, LoadImages, LoadStreams
-from Detection.utils.general import (LOGGER, check_img_size, non_max_suppression, scale_coords, check_requirements, cv2,
-                                  check_imshow, xyxy2xywh, increment_path, strip_optimizer, colorstr, print_args, check_file)
-from Detection.utils.torch_utils import select_device, time_sync
-from Detection.utils.plots import Annotator, colors, save_one_box
-from trackers.multi_tracker_zoo import create_tracker
-
-# remove duplicated stream handler to avoid duplicated logging
-logging.getLogger().removeHandler(logging.getLogger().handlers[0])
-
- # Load model
-device_track=''
-devices = select_device(device_track)
-model = DetectMultiBackend(WEIGHTS / '27Sep_2022.pt', device=devices, dnn=False, data=None, fp16=False)
-stride, names, pt = model.stride, model.names, model.pt
-imgsz = check_img_size((640, 640), s=stride)  # check image size
-
+iterator = 1
+    
+# Multi-threading
 TOLERANCE = 0.62
-FRAME_THICKNESS = 3
-FONT_THICKNESS = 2
-MODEL = 'svm'
-person_count = []
-vehicle_count = []
-elephant_count = []
-avg_Batchcount_person =[]
-avg_Batchcount_vehicel = []
-avg_Batchcount_elephant = []
-track_person = []
-track_vehicle = []
-track_elephant = []
-batch_person_id = []
-detect_count = []
-detect_file = []
-detect_img_cid = []
-detect_image = {}
+MODEL = 'cnn'
 count_person =0
 known_whitelist_faces = []
 known_whitelist_id = []
@@ -111,553 +73,550 @@ known_blacklist_faces = []
 known_blacklist_id = []
 face_did_encoding_store = dict()
 track_type = []
+dict_frame = {}
+frame = []
+count_frame ={}
+count = 0
+processes = []
+devicesUnique = []
+activity_list = []
+detect_count = []
+person_count = []
+vehicle_count = []
+avg_Batchcount_person =[]
+avg_Batchcount_vehicel = []
+activity_list= []
+geo_locations = []
+track_person = []
+track_vehicle = []
+track_elephant = []
+batch_person_id = []
+detect_img_cid = []
 
-#load lmdb
-env = lmdb.open('/home/nivetheni/DS_Gstrem_Pipeline/lmdb/face-detection.lmdb',
-                max_dbs=10, map_size=int(100e9))
+queue1 = Queue()
+queue2 = Queue()
+queue3 = Queue()
+queue4 = Queue()
+queue5 = Queue()
+queue6 = Queue()
+queue7 = Queue()
+queue8 = Queue()
+queue9 = Queue()
+queue10 = Queue()
 
-# Now create subdbs for known and unknown people.
-known_db = env.open_db(b'known')
-unknown_db = env.open_db(b'unknown')
+device = 'cuda' # or 'cpu'
+video_model = slow_r50_detection(True) # Another option is slowfast_r50_detection
+video_model = video_model.eval().to(device)
 
-async def lmdb_known():
-    # Iterate each DB to show the keys are sorted:
-    with env.begin() as txn:
-        list1 = list(txn.cursor(db=known_db))
-        
-    db_count_whitelist = 0
-    for key, value in list1:
-        #fetch from lmdb
-        with env.begin() as txn:
-            re_image = txn.get(key, db=known_db)
-            # Deserialization
-            print("Decode JSON serialized NumPy array")
-            decodedArrays = json.loads(re_image)
-            
-            finalNumpyArray = np.asarray(decodedArrays["array"], dtype="uint8")
-            
-            # Load an image
-            # image = face_recognition.load_image_file(f'{KNOWN_FACES_DIR}/{name}/{filename}')
-            image = finalNumpyArray
-            ratio = np.amax(image) / 256
-            image = (image / ratio).astype('uint8')
-            
-            # Get 128-dimension face encoding
-            # Always returns a list of found faces, for this purpose we take first face only (assuming one face per image as you can't be twice on one image)
-            try :
-                encoding = face_recognition.face_encodings(image)[0]
-            except IndexError as e  :
-                print( "Error ", IndexError , e)
-                continue
-            
-            # Append encodings and name
-            known_whitelist_faces.append(encoding)
-            known_whitelist_id.append(key.decode())
-            db_count_whitelist += 1
-            
-    print(db_count_whitelist, "total whitelist person")
+# gstreamer
+# Initializes Gstreamer, it's variables, paths
+Gst.init(sys.argv)
+image_arr = None
 
-async def lmdb_unknown():
-    # Iterate each DB to show the keys are sorted:
-    with env.begin() as txn:
-        list2 = list(txn.cursor(db=unknown_db))
-        
-    db_count_blacklist = 0
-    for key, value in list2:
-        #fetch from lmdb
-        with env.begin() as txn:
-            re_image = txn.get(key, db=unknown_db)
-            # Deserialization
-            print("Decode JSON serialized NumPy array")
-            decodedArrays = json.loads(re_image)
-            
-            finalNumpyArray = np.asarray(decodedArrays["array"],dtype="uint8")
-            
-            # Load an image
-            # image = face_recognition.load_image_file(f'{KNOWN_FACES_DIR}/{name}/{filename}')
-            image = finalNumpyArray
-            ratio = np.amax(image) / 256
-            image = (image / ratio).astype('uint8')
-            
-            # Get 128-dimension face encoding
-            # Always returns a list of found faces, for this purpose we take first face only (assuming one face per image as you can't be twice on one image)
-            try :
-                encoding = face_recognition.face_encodings(image)[0]
-            except IndexError as e  :
-                print( "Error ", IndexError , e)
-                continue
-            
-            # Append encodings and name
-            known_blacklist_faces.append(encoding)
-            known_blacklist_id.append(key.decode())
-            db_count_blacklist += 1
-    
-    print(db_count_blacklist, "total blacklist person")
+device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.264', 'h.265']
+load_dotenv()
 
-@torch.no_grad()
-def run(
-        source = ROOT,
-        queue1 = Queue(),
-        queue2 = Queue(),
-        queue3 = Queue(),
-        queue4 = Queue(),
-        queue5 = Queue(),
-        queue6 = Queue(),
-        queue7 = Queue(),
-        queue8 = Queue(),
-        queue9 = Queue(),
-        queue10 = Queue(),
-        yolo_weights=WEIGHTS / '27Sep_2022.pt',  # model.pt path(s),
-        reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
-        tracking_method='strongsort',
-        imgsz=(640, 640),  # inference size (height, width)
-        conf_thres=0.25,  # confidence threshold
-        iou_thres=0.45,  # NMS IOU threshold
-        max_det=1000,  # maximum detections per image
-        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        show_vid=False,  # show results
-        save_txt=False,  # save results to *.txt
-        save_conf=False,  # save confidences in --save-txt labels
-        save_crop=True,  # save cropped prediction boxes
-        save_vid=True,  # save confidences in --save-txt labels
-        nosave=False,  # do not save images/videos
-        classes=None,  # filter by class: --class 0, or --class 0 2 3
-        agnostic_nms=False,  # class-agnostic NMS
-        augment=False,  # augmented inference
-        visualize=False,  # visualize features
-        update=False,  # update all models
-        project=ROOT / 'Nats_output/track',  # save results to project/name
-        name='exp',  # save results to project/name
-        exist_ok=False,  # existing project/name ok, do not increment
-        line_thickness=2,  # bounding box thickness (pixels)
-        hide_labels=False,  # hide labels
-        hide_conf=False,  # hide confidences
-        hide_class=False,  # hide IDs
-        half=False,  # use FP16 half-precision inference
-        dnn=False,  # use OpenCV DNN for ONNX inference
+# activity
+cfg = get_cfg()
+cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
+cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.55  # set threshold for this model
+cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")
+predictor = DefaultPredictor(cfg)
+count_video = 0 
+
+
+async def get_person_bboxes(inp_img, predictor):
+    predictions = predictor(inp_img.cpu().detach().numpy())['instances'].to('cpu')
+    boxes = predictions.pred_boxes if predictions.has("pred_boxes") else None
+    scores = predictions.scores if predictions.has("scores") else None
+    classes = np.array(predictions.pred_classes.tolist() if predictions.has("pred_classes") else None)
+    predicted_boxes = boxes[np.logical_and(classes==0, scores>0.75 )].tensor.cpu() # only person
+    return predicted_boxes
+
+async def ava_inference_transform(
+    clip, 
+    boxes,
+    num_frames = 4, #if using slowfast_r50_detection, change this to 32
+    crop_size = 256, 
+    data_mean = [0.45, 0.45, 0.45], 
+    data_std = [0.225, 0.225, 0.225],
+    slow_fast_alpha = None, #if using slowfast_r50_detection, change this to 4
 ):
 
-    source = str(source)
-    save_img = not nosave and not source.endswith('.txt')  # save inference images
-    # Directories
-    if not isinstance(yolo_weights, list):  # single yolo model
-        exp_name = yolo_weights.stem
-    elif type(yolo_weights) is list and len(yolo_weights) == 1:  # single models after --yolo_weights
-        exp_name = Path(yolo_weights[0]).stem
-    else:  # multiple models after --yolo_weights
-        exp_name = 'ensemble'
-    exp_name = name if name else exp_name + "_" + reid_weights.stem
-    save_dir = increment_path(Path(project) / exp_name, exist_ok=exist_ok)  # increment run
-    (save_dir / 'tracks' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    boxes = np.array(boxes)
+    ori_boxes = boxes.copy()
 
-    # Dataloader
-    dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt)
-    nr_sources = 1
-    vid_path, vid_writer, txt_path = [None] * nr_sources, [None] * nr_sources, [None] * nr_sources
+    # Image [0, 255] -> [0, 1].
+    clip = uniform_temporal_subsample(clip, num_frames)
+    clip = clip.float()
+    clip = clip / 255.0
 
-    # Create as many strong sort instances as there are video sources
-    tracker_list = []
-    for i in range(nr_sources):
-        tracker = create_tracker(tracking_method, reid_weights, devices, half)
-        tracker_list.append(tracker, )
-        if hasattr(tracker_list[i], 'model'):
-            if hasattr(tracker_list[i].model, 'warmup'):
-                tracker_list[i].model.warmup()
-    outputs = [None] * nr_sources
+    height, width = clip.shape[2], clip.shape[3]
+    # The format of boxes is [x1, y1, x2, y2]. The input boxes are in the
+    # range of [0, width] for x and [0,height] for y
+    boxes = clip_boxes_to_image(boxes, height, width)
 
-    # Run tracking
-    # frame_count = 0
-    #model.warmup(imgsz=(1 if pt else nr_sources, 3, *imgsz))  # warmup
-    dt, seen = [0.0, 0.0, 0.0, 0.0], 0
-    curr_frames, prev_frames = [None] * nr_sources, [None] * nr_sources
-    for frame_idx, (path, im, im0s, vid_cap, s) in enumerate(dataset):
-        t1 = time_sync()
-        im = torch.from_numpy(im).to(devices)
-        im = im.half() if half else im.float()  # uint8 to fp16/32
-        im /= 255.0  # 0 - 255 to 0.0 - 1.0
-        if len(im.shape) == 3:
-            im = im[None]  # expand for batch dim
-        t2 = time_sync()
-        dt[0] += t2 - t1
+    # Resize short side to crop_size. Non-local and STRG uses 256.
+    clip, boxes = short_side_scale_with_boxes(
+        clip,
+        size=crop_size,
+        boxes=boxes,
+    )
+    
+    # Normalize images by mean and std.
+    clip = normalize(
+        clip,
+        np.array(data_mean, dtype=np.float32),
+        np.array(data_std, dtype=np.float32),
+    )
+    
+    boxes = clip_boxes_to_image(
+        boxes, clip.shape[2],  clip.shape[3]
+    )
+    
+    # Incase of slowfast, generate both pathways
+    if slow_fast_alpha is not None:
+        fast_pathway = clip
+        # Perform temporal sampling from the fast pathway.
+        slow_pathway = torch.index_select(
+            clip,
+            1,
+            torch.linspace(
+                0, clip.shape[1] - 1, clip.shape[1] // slow_fast_alpha
+            ).long(),
+        )
+        clip = [slow_pathway, fast_pathway]
+    
+    return clip, torch.from_numpy(boxes), ori_boxes
 
-        # Inference
-        visualize = increment_path(save_dir / Path(path[0]).stem, mkdir=True) if visualize else False
-        pred = model(im, augment=augment, visualize=visualize)
-        t3 = time_sync()
-        dt[1] += t3 - t2
+async def Activity(source,device_id,source_1):
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir
 
-        # Apply NMS
-        pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
-        dt[2] += time_sync() - t3
-
-        # Process detections
-        for i, det in enumerate(pred):  # detections per image
-            seen += 1
-            p, im0, _ = path, im0s.copy(), getattr(dataset, 'frame', 0)
-            p = Path(p)  # to Path
-            # video file
-            if source.endswith(VID_FORMATS):
-                txt_file_name = p.stem
-                save_path = str(save_dir / p.name)  # im.jpg, vid.mp4, ...
-            # folder with imgs
-            else:
-                txt_file_name = p.parent.name  # get folder name containing current img
-                save_path = str(save_dir / p.parent.name)  # im.jpg, vid.mp4, ...
-            curr_frames[i] = im0
-
-            txt_path = str(save_dir / 'tracks' / txt_file_name)  # im.txt
-            s += '%gx%g ' % im.shape[2:]  # print string
-            imc = im0.copy() if save_crop else im0  # for save_crop
-
-            annotator = Annotator(im0, line_width=line_thickness, pil=not ascii)
+    # Create an id to label name mapping
+    global count_video            
+    label_map, allowed_class_ids = AvaLabeledVideoFramePaths.read_label_map('ava_action_list.pbtxt')
+    # Create a video visualizer that can plot bounding boxes and visualize actions on bboxes.
+    video_visualizer = VideoVisualizer(81, label_map, top_k=3, mode="thres",thres=0.5)
+    
+    encoded_vid = pytorchvideo.data.encoded_video.EncodedVideo.from_path(source)
+    
+    time_stamp_range = range(1,8) # time stamps in video for which clip is sampled. 
+    clip_duration = 2.0 # Duration of clip used for each inference step.
+    gif_imgs = []
+    
+    for time_stamp in time_stamp_range:    
+        # print("Generating predictions for time stamp: {} sec".format(time_stamp))
+        
+        # Generate clip around the designated time stamps
+        inp_imgs = encoded_vid.get_clip(
+            time_stamp - clip_duration/2.0, # start second
+            time_stamp + clip_duration/2.0  # end second
+        )
+        inp_imgs = inp_imgs['video']
+        
+        # Generate people bbox predictions using Detectron2's off the self pre-trained predictor
+        # We use the the middle image in each clip to generate the bounding boxes.
+        inp_img = inp_imgs[:,inp_imgs.shape[1]//2,:,:]
+        inp_img = inp_img.permute(1,2,0)
+        
+        # Predicted boxes are of the form List[(x_1, y_1, x_2, y_2)]
+        predicted_boxes = await get_person_bboxes(inp_img, predictor) 
+        if len(predicted_boxes) == 0: 
+            # print("Skipping clip no frames detected at time stamp: ", time_stamp)
+            continue
             
-            if hasattr(tracker_list[i], 'tracker') and hasattr(tracker_list[i].tracker, 'camera_update'):
-                if prev_frames[i] is not None and curr_frames[i] is not None:  # camera motion compensation
-                    tracker_list[i].tracker.camera_update(prev_frames[i], curr_frames[i])
+        # Preprocess clip and bounding boxes for video action recognition.
+        inputs, inp_boxes, _ = await ava_inference_transform(inp_imgs, predicted_boxes.numpy())
+        # Prepend data sample id for each bounding box. 
+        # For more details refere to the RoIAlign in Detectron2
+        inp_boxes = torch.cat([torch.zeros(inp_boxes.shape[0],1), inp_boxes], dim=1)
+        
+        # Generate actions predictions for the bounding boxes in the clip.
+        # The model here takes in the pre-processed video clip and the detected bounding boxes.
+        if isinstance(inputs, list):
+            inputs = [inp.unsqueeze(0).to(device) for inp in inputs]
+        else:
+            inputs = inputs.unsqueeze(0).to(device)
+        preds = video_model(inputs, inp_boxes.to(device))
 
-            if det is not None and len(det):
-                # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()  # xyxy
-
-                # Print results
-                for c in det[:, -1].unique():
-                    global vehicle_count , license, detect_image, elephant_count
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-                    if names[int(c)] == "Person" :
-                        print(f"{n}","line 338")
-                        person_count.append(int(f"{n}"))
-                        print("person detected")
-                    if names[int(c)] == "Vehicle":
-                       vehicle_count.append(int(f"{n}"))
-                       print("vehicel detected")
-                    if names[int(c)] == "Elephant":
-                       elephant_count.append(int(f"{n}"))
-                       print("elephant detected")
-                for c in det[:,-1]:
-                    global personDid , count_person 
-                    # if frame_count % 10 == 0: 
-                    if names[int(c)]=="Face":
-                        print("person detected starting face detection code ")
-                        count_person += 1
-                        if count_person>0:
-                            np_bytes2 = BytesIO()
-                            np.save(np_bytes2, im0, allow_pickle=True)
-                            np_bytes2 = np_bytes2.getvalue()
-
-                            image = im0 # if im0 does not work, try with im1
-                            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
-                            locations = face_recognition.face_locations(image, model=MODEL)
-
-                            encodings = face_recognition.face_encodings(image, locations)
-                                
-                            print(f', found {len(encodings)} face(s)\n')
-                                
-                            for face_encoding ,face_location in zip(encodings, locations):
-                                    print(np.shape(known_whitelist_faces), "known_whitelist_faces", np.shape(face_encoding),"face_encoding")
-                                    results_whitelist = face_recognition.compare_faces(known_whitelist_faces, face_encoding, TOLERANCE)
-                                    print(results_whitelist, "611")
-                                    if True in results_whitelist:
-                                        did = '00'+ str(known_whitelist_id[results_whitelist.index(True)])
-                                        print(did, "did 613")
-                                        batch_person_id.append(did)
-                                        track_type.append("00")
-                                        ct = datetime.datetime.now() # ct stores current time
-                                        timestamp.append(str(ct))
-                                        if did in face_did_encoding_store.keys():
-                                            face_did_encoding_store[did].append(face_encoding)
-                                            top_left = (face_location[3], face_location[0])
-                                            bottom_right = (face_location[1], face_location[2])
-                                            color = [0,255,0]
-                                            cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                            top_left = (face_location[3], face_location[2])
-                                            bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                            cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                            cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                
-                                        else:
-                                            face_did_encoding_store[did] = list(face_encoding)
-                                            top_left = (face_location[3], face_location[0])
-                                            bottom_right = (face_location[1], face_location[2])
-                                            color = [0,255,0]
-                                            cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                            top_left = (face_location[3], face_location[2])
-                                            bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                            cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                            cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                                
-                                    else:
-                                        # if face_encoding not in known_blacklist_faces:
-                                            # # Serialization
-                                            # numpyData = {"array": image}
-                                            # encodedNumpyData = json.dumps(numpyData, cls=NumpyArrayEncoder)
-                                            # #push to blacklist lmdb
-                                            # person_name = bytearray(name[0]+ str(count), "utf-8")
-                                            # person_img = bytearray(encodedNumpyData, "utf-8")
-                                            # with env.begin(write=True) as txn:
-                                            #     txn.put(person_name, person_img, db=known_db)
-                                            known_blacklist_faces.append(face_encoding)
-                                        # else:
-                                            results_blacklist = face_recognition.compare_faces(known_blacklist_faces, face_encoding, TOLERANCE)
-                                            if True in results_blacklist:
-                                                # did = '01'+ str(known_blacklist_id[results_blacklist.index(True)])
-                                                did = '01' + 'blacklist'
-                                                print("did 623", did)
-                                                batch_person_id.append(did)
-                                                track_type.append("01")
-                                                ct = datetime.datetime.now() # ct stores current time
-                                                timestamp.append(str(ct))
-                                                if did in face_did_encoding_store.keys():
-                                                    face_did_encoding_store[did].append(face_encoding)
-                                                    top_left = (face_location[3], face_location[0])
-                                                    bottom_right = (face_location[1], face_location[2])
-                                                    color = [0,255,0]
-                                                    cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                                    top_left = (face_location[3], face_location[2])
-                                                    bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                                    cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                                    cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                                else:
-                                                    face_did_encoding_store[did] = list(face_encoding)
-                                                    top_left = (face_location[3], face_location[0])
-                                                    bottom_right = (face_location[1], face_location[2])
-                                                    color = [0,255,0]
-                                                    cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                                    top_left = (face_location[3], face_location[2])
-                                                    bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                                    cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                                    cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                                        
-                                            else:
-                                                if len(face_did_encoding_store) == 0:
-                                                    did = '10'+ str(generate(size =4 ))
-                                                    print(did, "did 642")
-                                                    track_type.append("10")
-                                                    batch_person_id.append(did)
-                                                    face_did_encoding_store[did] = list(face_encoding)
-                                                    top_left = (face_location[3], face_location[0])
-                                                    bottom_right = (face_location[1], face_location[2])
-                                                    color = [0,255,0]
-                                                    cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                                    top_left = (face_location[3], face_location[2])
-                                                    bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                                    cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                                    cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                                    
-                                                else:
-                                                    for key, value in face_did_encoding_store.items():
-                                                        print(key,"640")
-                                                        if key.startswith('10'):
-                                                            try :
-                                                                print(type(value),"type vlaue")
-                                                                print(np.shape(np.transpose(np.array(value))), "value 642" ,np.shape(value) ,"value orginal",np.shape(face_encoding), "face_encoding")
-                                                                results_unknown = face_recognition.compare_faces(np.transpose(np.array(value)), face_encoding, TOLERANCE)
-                                                                # results_unknown = face_recognition.compare_faces(np.array(value), face_encoding, TOLERANCE)
-                                                                print(results_unknown,"635")
-                                                                if True in results_unknown:
-                                                                    key_list = list(key)
-                                                                    key_list[1] = '1'
-                                                                    key = str(key_list)
-                                                                    print(key, "did 637")
-                                                                    batch_person_id.append(key)
-                                                                    track_type.append("11")
-                                                                    face_did_encoding_store[key].append(face_encoding)
-                                                                    top_left = (face_location[3], face_location[0])
-                                                                    bottom_right = (face_location[1], face_location[2])
-                                                                    color = [0,255,0]
-                                                                    cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                                                    top_left = (face_location[3], face_location[2])
-                                                                    bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                                                    cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                                                    cv2.putText(im0, key , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                                                    
-                                                                else:
-                                                                    did = '10'+ str(generate(size=4))
-                                                                    print(did, "did 642")
-                                                                    batch_person_id.append(did)
-                                                                    face_did_encoding_store[did] = list(face_encoding)
-                                                                    top_left = (face_location[3], face_location[0])
-                                                                    bottom_right = (face_location[1], face_location[2])
-                                                                    color = [0,255,0]
-                                                                    cv2.rectangle(im0, top_left, bottom_right, color, FRAME_THICKNESS)
-                                                                    top_left = (face_location[3], face_location[2])
-                                                                    bottom_right = (face_location[1]+50, face_location[2] + 22)
-                                                                    cv2.rectangle(im0, top_left, bottom_right, color, cv2.FILLED)
-                                                                    cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
-                                                                
-                                                            except np.AxisError as e:
-                                                                print(e,">> line 562")
-                                                                continue
-                                                        
-                                                print(batch_person_id, "batch_person_id")
-
-                # pass detections to strongsort
-                t4 = time_sync()
-                outputs[i] = tracker_list[i].update(det.cpu(), im0)
-                t5 = time_sync()
-                dt[3] += t5 - t4
-
-                # draw boxes for visualization
-                if len(outputs[i]) > 0:
-                    for j, (output, conf) in enumerate(zip(outputs[i], det[:, 4])):
+        preds= preds.to('cpu')
+        # The model is trained on AVA and AVA labels are 1 indexed so, prepend 0 to convert to 0 index.
+        preds = torch.cat([torch.zeros(preds.shape[0],1), preds], dim=1)
+        
+        # Plot predictions on the video and save for later visualization.
+        inp_imgs = inp_imgs.permute(1,2,3,0)
+        inp_imgs = inp_imgs/255.0
+        out_img_pred = video_visualizer.draw_clip_range(inp_imgs, preds, predicted_boxes)
+        gif_imgs += out_img_pred
+    try:
+        height, width = gif_imgs[0].shape[0], gif_imgs[0].shape[1]
+        vide_save_path = path+'/'+str(device_id)+'/'+str(count_video)+'_activity.mp4'
+        video = cv2.VideoWriter(vide_save_path,cv2.VideoWriter_fourcc(*'DIVX'), 7, (width,height))
     
-                        bboxes = output[0:4]
-                        id = output[4]
-                        cls = output[5]
+        for image in gif_imgs:
+            img = (255*image).astype(np.uint8)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            video.write(img)
+        video.release()
+        await asyncio.sleep(1)
+        run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10)
+        avg_Batchcount_person = queue1.get()
+        avg_Batchcount_vehicel= queue2.get()
+        detect_count= queue3.get()
+        track_person = queue4.get()
+        track_vehicle = queue5.get()
+        detect_img_cid = queue6.get()
+        track_dir = queue7.get()
+        track_type = queue8.get()
+        batch_person_id = queue9.get()
+        track_elephant = queue10.get()
+        
+    except IndexError:
+        print("No Activity")
+        # activity_list.append("No Activity")
+        open('classes.txt','w')
+        await asyncio.sleep(1)
+        run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10)
+        avg_Batchcount_person = queue1.get()
+        avg_Batchcount_vehicel = queue2.get()
+        detect_count= queue3.get()
+        track_person = queue4.get()
+        track_vehicle = queue5.get()
+        detect_img_cid = queue6.get()
+        track_dir = queue7.get()
+        track_type = queue8.get()
+        batch_person_id = queue9.get()
+        track_elephant = queue10.get()
+    count_video += 1
 
-                        if save_txt:
-                            # to MOT format
-                            bbox_left = output[0]
-                            bbox_top = output[1]
-                            bbox_w = output[2] - output[0]
-                            bbox_h = output[3] - output[1]
-                            # Write MOT compliant results to file
-                            with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * 10 + '\n') % (frame_idx + 1, id, bbox_left,  # MOT format
-                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
 
-                        if save_vid or save_crop or show_vid:  # Add bbox to image
-                            c = int(cls)  # integer class
-                            id = int(id)  # integer id
-                            label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
-                                (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
-                            annotator.box_label(bboxes, label, color=colors(c, True))
-                            if save_crop:
-                                txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
-                                crop_img = save_one_box(bboxes, imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
-                                detect_file_path = save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg'
-                                if detect_file_path not in detect_file:
-                                    detect_file.append(str(detect_file_path))
-                                    detect_image = (set(detect_file))
-                                
-                                
-                LOGGER.info(f'{s}Done. yolo:({t3 - t2:.3f}s), {tracking_method}:({t5 - t4:.3f}s)')
-
+async def BatchJson(source):
+    global activity_list ,activity_list_box , person_count
+    # We open the text file once it is created after calling the class in test2.py
+    label_map, allowed_class_ids = AvaLabeledVideoFramePaths.read_label_map('ava_action_list.pbtxt')
+    # We open the text file once it is created after calling the class in test2.py
+    file =  open(source, 'r')
+    if file.mode=='r':
+        contents= file.read()
+    # Read activity labels from text file and store them in a list
+    label = []
+    # print('Content length: ', len(contents))
+    for ind,item in enumerate(contents):
+        if contents[ind]=='[' and contents[ind+1] == '[':
+            continue
+        if contents[ind]==']':
+            if ind == len(contents)-1:
+                break
             else:
-                #strongsort_list[i].increment_ages()
-                LOGGER.info('No detections')
+                ind += 3
+                continue
+        if contents[ind]=='[' and contents[ind+1] != '[':
+            ind += 1
+            if ind>len(contents)-1:
+                break
+            label_each = []
+            string = ''
+            while contents[ind] != ']':
+                if contents[ind]==',':
+                    label_each.append(int(string))
+                    string = ''
+                    ind+=1
+                    if ind>len(contents)-1:
+                        break
+                elif contents[ind]==' ':
+                    ind+=1
+                    if ind>len(contents)-1:
+                        break
+                else:
+                    string += contents[ind]
+                    ind += 1
+                    if contents[ind]==']':
+                        label_each.append(int(string))
+                        break
+                    if ind>len(contents)-1:
+                        break
+            if len(label_each)>0:
+                label.append(label_each)
+                label_each = []
+    for item in label:
+        activity_list_box = []
+        for i in item:
+            activity_list_box.append(label_map[i])
+        activity_list.append(activity_list_box)
+    return activity_list
+          
+async def json_publish(primary):    
+    nc = await nats.connect(servers=["nats://216.48.181.154:5222"] , reconnect_time_wait= 50 ,allow_reconnect=True, connect_timeout=20, max_reconnect_attempts=60)
+    js = nc.jetstream()
+    JSONEncoder = json.dumps(primary)
+    json_encoded = JSONEncoder.encode()
+    Subject = "sample.activity_json"
+    Stream_name = "Testing_activity"
+    await js.add_stream(name= Stream_name, subjects=[Subject])
+    ack = await js.publish(Subject, json_encoded)
+    print(f'Ack: stream={ack.stream}, sequence={ack.seq}')
+    print("Activity is getting published")
 
-            # Stream results
-            im0 = annotator.result()
-           
-            # Save results (image with detections)
-            if save_vid:
-                # # if dataset.mode == 'image':
-                image_path = (str(save_dir) + '/detect')
-                if not os.path.exists(image_path):
-                    os.makedirs(image_path, exist_ok=True)
-                image_path1 = str(image_path) + '/detect.jpg'
-                cv2.imwrite(image_path1, im0) # to save detected image
+async def batch_save(device_id, file_id):
+    BatchId = generate(size= 8)
+    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir,track_type,batch_person_id
 
-                if vid_path[i] != save_path:  # new video
-                    vid_path[i] = save_path
-                    if isinstance(vid_writer[i], cv2.VideoWriter):
-                        vid_writer[i].release()  # release previous video writer
-                    if vid_cap:  # video
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    else:  # stream
-                        fps, w, h = 30, im0.shape[1], im0.shape[0]
-                    save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
-                    vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                vid_writer[i].write(im0)
+    video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
+    print(video_name)
 
-            prev_frames[i] = curr_frames[i]
+    await Activity(source=video_name,device_id=device_id,source_1=video_name)
 
-            # Print time (inference-only)
-        LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
-        
-    #people Count
-    sum_count = 0
-    for x in person_count:
-        sum_count += int(x)
-    try :
-        avg = ceil(sum_count/len(person_count))
-        avg_Batchcount_person.append(str(avg))
-    except ZeroDivisionError:
-        avg_Batchcount_person.append("0")
-        print("No person found ")
-        
-    for iten in avg_Batchcount_person:
-        for i in range(int(iten[0])):
-            track_person.append(1)
-        
-    sum_count = 0
-    for x in vehicle_count:
-        sum_count += int(x)
-    try :
-        avg = ceil(sum_count/len(vehicle_count))
-        avg_Batchcount_vehicel.append(str(avg))
-    except ZeroDivisionError:
-        avg_Batchcount_vehicel.append("0")
-        print("No Vehicle found ")
+    ct = datetime.datetime.now() # ct stores current time
+    timestamp = str(ct)
+    activity_list = await BatchJson(source="classes.txt")
+    metapeople ={
+                    "type":(track_type),
+                    "track":(track_person),
+                    "id":(batch_person_id),
+                    "activity":{"activities":activity_list}
+                    }
     
-    for iten in avg_Batchcount_vehicel:
-        for i in range(int(iten[0])):
-            track_vehicle.append(1)
+    metaVehicle = {
+                    "type":(track_type),
+                    "track":(track_vehicle),
+                    "id":("Null"),
+                    "activity":("Null")
+                    }
+    metaElephant = {
+                    "track":(track_elephant)
+                    }
+    metaObj = {
+                "people":metapeople,
+                "vehicle":metaVehicle,
+                "elephant":metaElephant
+            }
+    
+    metaBatch = {
+        "Detect": (detect_count),
+        "Count": {"people_count":(avg_Batchcount_person),
+                    "vehicle_count":(avg_Batchcount_vehicel)} ,
+        "Object":metaObj,
+        "Cid":(detect_img_cid)
+    }
+    
+    primary = { "deviceid":(device_id),
+                "batchid":(BatchId), 
+                "timestamp":(timestamp),
+                "geo": {"latitude":'12.913632983105556',
+                        "longitude":'77.58994246818435'}, 
+                "metaData": metaBatch}
+    print(primary)
+    await json_publish(primary=primary)
+    detect_count = []
+    avg_Batchcount_person = []
+    avg_Batchcount_vehicel = []
+    track_person = []
+    track_vehicle = []
+    track_elephant = []
+    activity_list.clear()
+    detect_img_cid = []
+    track_type = []
+    batch_person_id = []
+    os.remove("classes.txt")
+    shutil.rmtree(track_dir)
+    gc.collect()
+    torch.cuda.empty_cache()
 
-    sum_count = 0
-    for x in elephant_count:
-        sum_count += int(x)
+async def gst_data(file_id , device_id):
+    global count 
+    sem = asyncio.Semaphore(1)
+    await sem.acquire()
+    try:
+        await batch_save(device_id=device_id ,file_id=file_id)\
+    
+    except TypeError as e:
+        print(TypeError," gstreamer error 121 >> ", e)
+        
+    finally:
+        print("done with work ")
+        sem.release()
+
+    # logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
+    # logging.debug("Debug logging test...")
+    # logging.info("Program is working as expected")
+    # logging.warning("Warning, the program may not function properly")
+    # logging.error("The program encountered an error")
+    # logging.critical("The program crashed")
+
+async def gst_stream(device_id, location, device_type):
+    
+    def format_location_callback(mux, file_id, data):
+        print(file_id)
+        global iterator
+        if(file_id == 0):
+            file_id = 4
+            asyncio.run(gst_data((file_id), data))
+        else:
+            asyncio.run(gst_data((file_id-1), data))
+            iterator += 1
+
+    try:
+        # filename for mp4
+        video_name1 = path + '/' + str(device_id)
+        print(video_name1)
+        if not os.path.exists(video_name1):
+            os.makedirs(video_name1, exist_ok=True)
+        video_name = video_name1 + '/Nats_video'+str(device_id)
+        print(video_name)
+
+        # filename for hls
+        video_name_hls1 = hls_path + '/' + str(device_id)
+        if not os.path.exists(video_name_hls1):
+            os.makedirs(video_name_hls1, exist_ok=True)
+        video_name_hls = video_name_hls1 + '/Hls_video'+str(device_id)
+        print(video_name_hls)
+
+        # rtspsrc location='rtsp://happymonk:admin123@streams.ckdr.co.in:1554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif' protocols="tcp" ! rtph264depay ! tee name=t t. ! queue ! h264parse ! splitmuxsink location=file-%01d.mp4 max-files=5 max-size-time=10000000000 t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream2 protocols=tcp t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream1 playlist-location=playlist.m3u8 location=segment.%05d.ts target-duration=10 playlist-length=3 max-files=6
+    
+        if(device_type == "h.264"):
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! tee name=t t. ! queue ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id} t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream{device_id} protocols=tcp t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
+        elif(device_type == "h.265"):
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph265depay name=depay-{device_id} ! tee name=t t. ! queue ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id} t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream{device_id} protocols=tcp t. ! queue ! h265parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x265enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
+
+        sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
+
+        if not pipeline:
+            print("Not all elements could be created.")
+        
+        sink.connect("format-location", format_location_callback, device_id)
+        
+        # Start playing
+        ret = pipeline.set_state(Gst.State.PLAYING)
+        if ret == Gst.StateChangeReturn.FAILURE:
+            print("Unable to set the pipeline to the playing state.")
+
+    except TypeError as e:
+        print(TypeError," gstreamer streaming error >> ", e)
+
+def on_message(bus: Gst.Bus, message: Gst.Message, loop: GLib.MainLoop):
+    mtype = message.type
+    """
+        Gstreamer Message Types and how to parse
+        https://lazka.github.io/pgi-docs/Gst-1.0/flags.html#Gst.MessageType
+    """
+    if mtype == Gst.MessageType.EOS:
+        print("End of stream")
+        loop.quit()
+
+    elif mtype == Gst.MessageType.ERROR:
+        err, debug = message.parse_error()
+        print(("Error received from element %s: %s" % (
+            message.src.get_name(), err)))
+        print(("Debugging information: %s" % debug))
+        loop.quit()
+
+    elif mtype == Gst.MessageType.STATE_CHANGED:
+        if isinstance(message.src, Gst.Pipeline):
+            old_state, new_state, pending_state = message.parse_state_changed()
+            print(("Pipeline state changed from %s to %s." %
+            (old_state.value_nick, new_state.value_nick)))
+    return True
+
+async def cb(msg):
     try :
-        avg = ceil(sum_count/len(elephant_count))
-        avg_Batchcount_elephant.append(str(avg))
-    except ZeroDivisionError:
-        avg_Batchcount_elephant.append("0")
-        track_elephant.append(0)
-        print("No Elephant found ")
+        data =(msg.data)
+        parse = json.loads(data)
+        device_id = parse['device_id']
+        user_name = parse['username']
+        password = parse['password']
+        device_url = parse['rtsp_url']
+        device_encode = parse['encode']
+        await gst_stream(device_id=device_id ,location=device_url, device_type=device_encode)
+
+async def main():
+
+    await lmdb_known()
+    await lmdb_unknown()
     
-    for iten in avg_Batchcount_elephant:
-        for i in range(int(iten[0])):
-            track_elephant.append(1)
-        
-    if len(person_count) > 0 or len(vehicle_count) > 0 or len(elephant_count) > 0 :
-        detect_count.append(1)
-    else:
-        detect_count.append(0)
-        
-    # publish detected image to ipfs
-    command = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=image_path1)
-    output = sp.getoutput(command)
-    detect_img_cid.append(output)
+    pipeline = Gst.parse_launch('fakesrc ! queue ! fakesink')
 
+    # Init GObject loop to handle Gstreamer Bus Events
+    loop = GLib.MainLoop()
 
-    queue1.put(str(avg_Batchcount_person))
-    queue2.put(str(avg_Batchcount_vehicel))
-    queue3.put(str(detect_count))
-    queue4.put(str(track_person))
-    queue5.put(str(track_vehicle))
-    queue6.put(str(detect_img_cid))
-    queue7.put(str(save_dir))
-    queue8.put(str(track_type))
-    queue9.put(str(batch_person_id))
-    queue10.put(str(track_elephant))
+    bus = pipeline.get_bus()
+    # allow bus to emit messages to main thread
+    bus.add_signal_watch()
 
-    person_count.clear()
-    vehicle_count.clear()
-    avg_Batchcount_person.clear()
-    avg_Batchcount_vehicel.clear()
-    detect_count.clear()
-    track_person.clear()
-    track_vehicle.clear()
-    track_elephant.clear()
-    detect_file.clear()
-    detect_img_cid.clear()
-    track_type.clear()
-    batch_person_id.clear()
+    # Add handler to specific signal
+    bus.connect("message", on_message, loop)
+
+    # Start pipeline
+    pipeline.set_state(Gst.State.PLAYING)
+
+    nc = await nats.connect(servers=["nats://216.48.181.154:5222"] , reconnect_time_wait= 50 ,allow_reconnect=True, connect_timeout=20, max_reconnect_attempts=60)
+    js = nc.jetstream()
+    await js.subscribe("device.add.new", cb=cb, stream="device_stream" , idle_heartbeat = 2)
+
+    # for i in range(1, 7):
+    #     stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
+    #     await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i])
     
+    try:
+        loop.run()
+    except Exception:
+        traceback.print_exc()
+        loop.quit()
 
-    # Print results
-    t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
-    LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms {tracking_method} update per image at shape {(1, 3, *imgsz)}' % t)
-    if save_txt or save_vid:
-        s = f"\n{len(list(save_dir.glob('tracks/*.txt')))} tracks saved to {save_dir / 'tracks'}" if save_txt else ''
-        LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
-    if update:
-        strip_optimizer(yolo_weights)  # update model (to fix SourceChangeWarning)
+    # Stop Pipeline
+    pipeline.set_state(Gst.State.NULL)
+    del pipeline
+    
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    try :
+        loop.run_until_complete(main())
+        loop.run_forever()
+    except RuntimeError as e:
+        print("error ", e)
+        print(torch.cuda.memory_summary(device=None, abbreviated=False), "cuda")
+        
+"""
+Json Object For a Batch Video 
+JsonObjectBatch= {ID , TimeStamp , {Data} } 
+Data = {
+    "person" : [ Device Id , [Re-Id] , [Frame TimeStamp] , [Lat , Lon], [Person_count] ,[Activity] ]
+    "car":[ Device ID, [Lp Number] , [Frame TimeStamp] , [Lat , lon] ]
+}  
+Activity = [ "walking" , "standing" , "riding a bike" , "talking", "running", "climbing ladder"]
+"""
 
-
-if __name__ == "__main__":
-    run(source="gray_scale.mp4")
+"""
+metapeople ={
+                    "type":{" 00: known whitelist, 01: known blacklist, 10: unknown first time, 11: unknown repeat"},
+                    "track":{" 0: tracking OFF, 1: tracking ON"},
+                    "id":"face_id",
+                    "activity":{"activities":activity_list , "boundaryCrossing":boundary}  
+                    }
+    
+    metaVehicel = {
+                    "type":{" 00: known whitelist, 01: known blacklist, 10: unknown first time, 11: unknown repeat"},
+                    "track":{" 0: tracking OFF, 1: tracking ON"},
+                    "id":"license_plate",
+                    "activity":{"boundaryCrossing":boundary}
+    }
+    metaObj = {
+                 "people":metapeople,
+                 "vehicle":metaVehicel
+               }
+    
+    metaBatch = {
+        "Detect": "0: detection NO, 1: detection YES",
+        "Count": {"people_count":str(avg_Batchcount),
+                  "vehicle_count":str(avg_Batchcount)} ,
+        "Object":metaObj
+        
+    }
+    
+    primary = { "deviceid":str(Device_id),
+                "batchid":str(BatchId), 
+                "timestamp":str(frame_timestamp), 
+                "geo":str(Geo_location),
+                "metaData": metaBatch}
+    print(primary)
+    
+"""

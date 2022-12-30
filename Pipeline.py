@@ -192,7 +192,7 @@ async def ava_inference_transform(
     return clip, torch.from_numpy(boxes), ori_boxes
 
 async def Activity(source,device_id,source_1):
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir
+    global avg_Batchcount_person, avg_Batchcount_vehicel,avg_Batchcount_elephant,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir
 
     # Create an id to label name mapping
     global count_video            
@@ -261,7 +261,7 @@ async def Activity(source,device_id,source_1):
             video.write(img)
         video.release()
         await asyncio.sleep(1)
-        run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10)
+        run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11)
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel= queue2.get()
         detect_count= queue3.get()
@@ -279,7 +279,7 @@ async def Activity(source,device_id,source_1):
         # activity_list.append("No Activity")
         open('classes.txt','w')
         await asyncio.sleep(1)
-        run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10)
+        run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11)
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel = queue2.get()
         detect_count= queue3.get()
@@ -355,7 +355,7 @@ async def json_publish(primary):
     JSONEncoder = json.dumps(primary)
     json_encoded = JSONEncoder.encode()
     Subject = "military.activities"
-    Stream_name = "Testing_activity"
+    Stream_name = "Testing_military"
     await js.add_stream(name= Stream_name, subjects=[Subject])
     ack = await js.publish(Subject, json_encoded)
     print(f'Ack: stream={ack.stream}, sequence={ack.seq}')
@@ -363,7 +363,7 @@ async def json_publish(primary):
 
 async def batch_save(device_id, file_id):
     BatchId = generate(size= 8)
-    global avg_Batchcount_person, avg_Batchcount_vehicel,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir,track_type,batch_person_id
+    global avg_Batchcount_person, avg_Batchcount_vehicel,avg_Batchcount_elephant, track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir,track_type,batch_person_id
 
     video_name = path + '/' + str(device_id) +'/Nats_video'+str(device_id)+'-'+ str(file_id) +'.mp4'
     print(video_name)
@@ -532,8 +532,8 @@ def on_message(bus: Gst.Bus, message: Gst.Message, loop: GLib.MainLoop):
 
 async def main():
 
-    await lmdb_known()
-    await lmdb_unknown()
+    # await lmdb_known()
+    # await lmdb_unknown()
     
     pipeline = Gst.parse_launch('fakesrc ! queue ! fakesink')
 
@@ -550,7 +550,7 @@ async def main():
     # Start pipeline
     pipeline.set_state(Gst.State.PLAYING)
 
-    for i in range(1, 7):
+    for i in range(1, 2):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
         await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i])
     

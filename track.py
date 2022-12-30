@@ -396,17 +396,7 @@ def run(
                                             cv2.putText(im0, did , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
                                                 
                                     else:
-                                        # if face_encoding not in known_blacklist_faces:
-                                            # # Serialization
-                                            # numpyData = {"array": image}
-                                            # encodedNumpyData = json.dumps(numpyData, cls=NumpyArrayEncoder)
-                                            # #push to blacklist lmdb
-                                            # person_name = bytearray(name[0]+ str(count), "utf-8")
-                                            # person_img = bytearray(encodedNumpyData, "utf-8")
-                                            # with env.begin(write=True) as txn:
-                                            #     txn.put(person_name, person_img, db=known_db)
                                             known_blacklist_faces.append(face_encoding)
-                                        # else:
                                             results_blacklist = face_recognition.compare_faces(known_blacklist_faces, face_encoding, TOLERANCE)
                                             if True in results_blacklist:
                                                 track_type.clear()

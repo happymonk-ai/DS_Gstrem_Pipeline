@@ -207,6 +207,7 @@ def run(
         queue8 = Queue(),
         queue9 = Queue(),
         queue10 = Queue(),
+        queue11 = Queue(),
         yolo_weights=WEIGHTS / '27Sep_2022.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
@@ -647,6 +648,7 @@ def run(
     queue8.put(str(track_type))
     queue9.put(str(batch_person_id))
     queue10.put(str(track_elephant))
+    queue11.put(str(avg_Batchcount_elephant))
 
     person_count.clear()
     vehicle_count.clear()
@@ -660,6 +662,7 @@ def run(
     detect_img_cid.clear()
     track_type.clear()
     batch_person_id.clear()
+    avg_Batchcount_elephant.clear()
     
 
     # Print results

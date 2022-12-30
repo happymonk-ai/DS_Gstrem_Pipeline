@@ -92,6 +92,7 @@ track_vehicle = []
 track_elephant = []
 batch_person_id = []
 detect_img_cid = []
+avg_Batchcount_elephant = []
 
 queue1 = Queue()
 queue2 = Queue()
@@ -103,6 +104,7 @@ queue7 = Queue()
 queue8 = Queue()
 queue9 = Queue()
 queue10 = Queue()
+queue11 = Queue()
 
 device = 'cuda' # or 'cpu'
 video_model = slow_r50_detection(True) # Another option is slowfast_r50_detection
@@ -270,6 +272,7 @@ async def Activity(source,device_id,source_1):
         track_type = queue8.get()
         batch_person_id = queue9.get()
         track_elephant = queue10.get()
+        avg_Batchcount_elephant = queue11.get()
         
     except IndexError:
         print("No Activity")
@@ -287,6 +290,7 @@ async def Activity(source,device_id,source_1):
         track_type = queue8.get()
         batch_person_id = queue9.get()
         track_elephant = queue10.get()
+        avg_Batchcount_elephant = queue11.get()
     count_video += 1
 
 
@@ -383,7 +387,8 @@ async def batch_save(device_id, file_id):
                     "activity":("Null")
                     }
     metaElephant = {
-                    "track":(track_elephant)
+                    "track":(track_elephant),
+                    "Elephent_count":(avg_Batchcount_elephant)
                     }
     metaObj = {
                 "people":metapeople,
@@ -417,6 +422,7 @@ async def batch_save(device_id, file_id):
     detect_img_cid = []
     track_type = []
     batch_person_id = []
+    avg_Batchcount_elephant = []
     os.remove("classes.txt")
     shutil.rmtree(track_dir)
     gc.collect()

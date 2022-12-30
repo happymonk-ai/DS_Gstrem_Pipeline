@@ -113,7 +113,7 @@ face_did_encoding_store = dict()
 track_type = []
 
 #load lmdb
-env = lmdb.open('/home/nivetheni/DS_Gstrem_Pipeline/lmdb/face-detection.lmdb',
+env = lmdb.open('./lmdb/face-detection.lmdb',
                 max_dbs=10, map_size=int(100e9))
 
 # Now create subdbs for known and unknown people.

@@ -471,7 +471,6 @@ class VideoVisualizer:
                 top_scores.append(pred[mask].tolist())
                 top_class = torch.squeeze(torch.nonzero(mask), dim=-1).tolist()
                 top_classes.append(top_class)
-        # print("vis line 474",top_classes)
         file = open('classes.txt','w')
         file.write(repr(top_classes))
         

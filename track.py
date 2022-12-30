@@ -663,6 +663,8 @@ def run(
     track_type.clear()
     batch_person_id.clear()
     avg_Batchcount_elephant.clear()
+    gc.collect()
+    torch.cuda.empty_cache()
     
 
     # Print results

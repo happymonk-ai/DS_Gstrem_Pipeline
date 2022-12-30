@@ -451,12 +451,12 @@ async def gst_data(file_id , device_id):
         print("done with work ")
         sem.release()
 
-    # logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
-    # logging.debug("Debug logging test...")
-    # logging.info("Program is working as expected")
-    # logging.warning("Warning, the program may not function properly")
-    # logging.error("The program encountered an error")
-    # logging.critical("The program crashed")
+    logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
+    logging.debug("Debug logging test...")
+    logging.info("Program is working as expected")
+    logging.warning("Warning, the program may not function properly")
+    logging.error("The program encountered an error")
+    logging.critical("The program crashed")
 
 async def gst_stream(device_id, location, device_type):
     

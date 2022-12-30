@@ -410,7 +410,7 @@ async def batch_save(device_id, file_id):
                 "geo": {"latitude":'12.913632983105556',
                         "longitude":'77.58994246818435'}, 
                 "metaData": metaBatch}
-    print(primary)
+    print(primary , "Json final ")
     Process(target= await json_publish(primary=primary)).start()
     detect_count = []
     avg_Batchcount_person = []

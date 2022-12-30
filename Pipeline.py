@@ -28,9 +28,9 @@ import datetime #datetime module to fetch current time when frame is detected
 import shutil
 
 #Detection
-from dummy_track import run
-from dummy_track import lmdb_known
-from dummy_track import lmdb_unknown
+from track import run
+from track import lmdb_known
+from track import lmdb_unknown
 
 #PytorchVideo
 from functools import partial

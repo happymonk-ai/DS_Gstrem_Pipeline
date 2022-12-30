@@ -202,7 +202,7 @@ async def Activity(source,device_id,source_1):
     
     encoded_vid = pytorchvideo.data.encoded_video.EncodedVideo.from_path(source)
     
-    time_stamp_range = range(1,30) # time stamps in video for which clip is sampled. 
+    time_stamp_range = range(1,9) # time stamps in video for which clip is sampled. 
     clip_duration = 2.0 # Duration of clip used for each inference step.
     gif_imgs = []
     

@@ -28,9 +28,9 @@ import datetime #datetime module to fetch current time when frame is detected
 import shutil
 
 #Detection
-from track import run
-# from track import lmdb_known
-# from track import lmdb_unknown
+from dummy_track import run
+from dummy_track import lmdb_known
+from dummy_track import lmdb_unknown
 
 #PytorchVideo
 from functools import partial
@@ -55,8 +55,8 @@ from visualization import VideoVisualizer
 # face_detection
 # import lmdb
 
-path = "./Nats_output"
-hls_path = "./Hls_output"
+path = "./Nats_output1"
+hls_path = "./Hls_output1"
 
 if os.path.exists(path) is False:
     os.mkdir(path)
@@ -350,8 +350,8 @@ async def json_publish(primary):
     js = nc.jetstream()
     JSONEncoder = json.dumps(primary)
     json_encoded = JSONEncoder.encode()
-    Subject = "sample.activity_DS_json"
-    Stream_name = "DS_activity"
+    Subject = "sample.activity_json"
+    Stream_name = "Testing_activity"
     await js.add_stream(name= Stream_name, subjects=[Subject])
     ack = await js.publish(Subject, json_encoded)
     print(f'Ack: stream={ack.stream}, sequence={ack.seq}')
@@ -365,8 +365,6 @@ async def batch_save(device_id, file_id):
     print(video_name)
 
     Process (target = await Activity(source=video_name,device_id=device_id,source_1=video_name)).start() 
-    await asyncio.sleep(1)
-    # await Activity(source=video_name,device_id=device_id,source_1=video_name)
 
     ct = datetime.datetime.now() # ct stores current time
     timestamp = str(ct)
@@ -408,7 +406,7 @@ async def batch_save(device_id, file_id):
                         "longitude":'77.58994246818435'}, 
                 "metaData": metaBatch}
     print(primary)
-    await json_publish(primary=primary)
+    Process(target= await json_publish(primary=primary)).start()
     detect_count = []
     avg_Batchcount_person = []
     avg_Batchcount_vehicel = []
@@ -425,11 +423,20 @@ async def batch_save(device_id, file_id):
     torch.cuda.empty_cache()
 
 async def gst_data(file_id , device_id):
+    
     global count 
     sem = asyncio.Semaphore(1)
     await sem.acquire()
     try:
-        await batch_save(device_id=device_id ,file_id=file_id)\
+        if device_id not in devicesUnique:
+            t = Process(target= await batch_save(device_id=device_id ,file_id=file_id))
+            t.start()
+            processes.append(t)
+            devicesUnique.append(device_id)
+        else:
+            ind = devicesUnique.index(device_id)
+            t = processes[ind]
+            Process(name = t.name, target= await batch_save(device_id=device_id ,file_id=file_id))
     
     except TypeError as e:
         print(TypeError," gstreamer error 121 >> ", e)
@@ -455,7 +462,7 @@ async def gst_stream(device_id, location, device_type):
             asyncio.run(gst_data((file_id), data))
         else:
             asyncio.run(gst_data((file_id-1), data))
-            # iterator += 1
+        #     iterator += 1
 
     try:
         # filename for mp4
@@ -472,13 +479,11 @@ async def gst_stream(device_id, location, device_type):
             os.makedirs(video_name_hls1, exist_ok=True)
         video_name_hls = video_name_hls1 + '/Hls_video'+str(device_id)
         print(video_name_hls)
-
-        # rtspsrc location='rtsp://happymonk:admin123@streams.ckdr.co.in:1554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif' protocols="tcp" ! rtph264depay ! tee name=t t. ! queue ! h264parse ! splitmuxsink location=file-%01d.mp4 max-files=5 max-size-time=10000000000 t. ! queue ! rtspclientsink location=rtsp://216.48.181.154:8554/mystream2 protocols=tcp t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=640, height=360 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream1 playlist-location=playlist.m3u8 location=segment.%05d.ts target-duration=10 playlist-length=3 max-files=6
     
         if(device_type == "h.264"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! tee name=t t. ! queue ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id} t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=1080, height=1080 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
         elif(device_type == "h.265"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} name={device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph265depay name=depay-{device_id} ! tee name=t t. ! queue ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id} t. ! queue ! h265parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=1080, height=1080 ! x265enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
 
         sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
 
@@ -519,21 +524,10 @@ def on_message(bus: Gst.Bus, message: Gst.Message, loop: GLib.MainLoop):
             (old_state.value_nick, new_state.value_nick)))
     return True
 
-# async def cb(msg):
-#     try :
-#         data =(msg.data)
-#         parse = json.loads(data)
-#         device_id = parse['device_id']
-#         user_name = parse['username']
-#         password = parse['password']
-#         device_url = parse['rtsp_url']
-#         device_encode = parse['encode']
-#         await gst_stream(device_id=device_id ,location=device_url, device_type=device_encode)
-
 async def main():
 
-    # await lmdb_known()
-    # await lmdb_unknown()
+    await lmdb_known()
+    await lmdb_unknown()
     
     pipeline = Gst.parse_launch('fakesrc ! queue ! fakesink')
 
@@ -549,10 +543,6 @@ async def main():
 
     # Start pipeline
     pipeline.set_state(Gst.State.PLAYING)
-
-    # nc = await nats.connect(servers=["nats://216.48.181.154:5222"] , reconnect_time_wait= 50 ,allow_reconnect=True, connect_timeout=20, max_reconnect_attempts=60)
-    # js = nc.jetstream()
-    # await js.subscribe("device.add.new", cb=cb, stream="device_stream" , idle_heartbeat = 2)
 
     for i in range(1, 7):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))

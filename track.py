@@ -102,9 +102,7 @@ track_vehicle = []
 track_elephant = []
 batch_person_id = []
 detect_count = []
-detect_file = []
 detect_img_cid = []
-detect_image = {}
 count_person =0
 known_whitelist_faces = []
 known_whitelist_id = []
@@ -531,10 +529,7 @@ def run(
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
                                 crop_img = save_one_box(bboxes, imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
-                                detect_file_path = save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg'
-                                if detect_file_path not in detect_file:
-                                    detect_file.append(str(detect_file_path))
-                                    detect_image = (set(detect_file))
+                                save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg'
                                 
                                 
                 LOGGER.info(f'{s}Done. yolo:({t3 - t2:.3f}s), {tracking_method}:({t5 - t4:.3f}s)')
@@ -649,7 +644,6 @@ def run(
     track_person.clear()
     track_vehicle.clear()
     track_elephant.clear()
-    detect_file.clear()
     detect_img_cid.clear()
     track_type.clear()
     batch_person_id.clear()

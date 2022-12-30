@@ -354,7 +354,7 @@ async def json_publish(primary):
     js = nc.jetstream()
     JSONEncoder = json.dumps(primary)
     json_encoded = JSONEncoder.encode()
-    Subject = "sample.activity_json"
+    Subject = "military.activities"
     Stream_name = "Testing_activity"
     await js.add_stream(name= Stream_name, subjects=[Subject])
     ack = await js.publish(Subject, json_encoded)

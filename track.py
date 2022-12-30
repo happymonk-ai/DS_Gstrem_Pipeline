@@ -21,6 +21,7 @@ import subprocess as sp
 import glob
 from nanoid import generate
 from io import BytesIO
+import gc
 
 import numpy as np
 import cv2 as cv

@@ -55,8 +55,8 @@ from visualization import VideoVisualizer
 # face_detection
 # import lmdb
 
-path = "./Nats_output1"
-hls_path = "./Hls_output1"
+path = "./Nats_output"
+hls_path = "./Hls_output"
 
 if os.path.exists(path) is False:
     os.mkdir(path)
@@ -83,16 +83,17 @@ activity_list = []
 detect_count = []
 person_count = []
 vehicle_count = []
-avg_Batchcount_person =[]
-avg_Batchcount_vehicel = []
+avg_Batchcount_person = 0
+avg_Batchcount_vehicel = 0
 activity_list= []
 geo_locations = []
 track_person = []
 track_vehicle = []
 track_elephant = []
 batch_person_id = []
-detect_img_cid = []
-avg_Batchcount_elephant = []
+detect_img_cid = ''
+avg_Batchcount_elephant = 0
+null = None
 
 queue1 = Queue()
 queue2 = Queue()
@@ -115,7 +116,7 @@ video_model = video_model.eval().to(device)
 Gst.init(sys.argv)
 image_arr = None
 
-device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.264', 'h.265']
+device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.264', 'h.265', 'mp4', 'mp4', 'mp4', 'mp4', 'mp4', 'mp4', 'mp4']
 load_dotenv()
 
 # activity
@@ -192,7 +193,7 @@ async def ava_inference_transform(
     return clip, torch.from_numpy(boxes), ori_boxes
 
 async def Activity(source,device_id,source_1):
-    global avg_Batchcount_person, avg_Batchcount_vehicel,avg_Batchcount_elephant,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir
+    global vide_save_path, avg_Batchcount_person, avg_Batchcount_vehicel,avg_Batchcount_elephant,track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir,track_type,batch_person_id
 
     # Create an id to label name mapping
     global count_video            
@@ -202,7 +203,7 @@ async def Activity(source,device_id,source_1):
     
     encoded_vid = pytorchvideo.data.encoded_video.EncodedVideo.from_path(source)
     
-    time_stamp_range = range(1,9) # time stamps in video for which clip is sampled. 
+    time_stamp_range = range(1,5) # time stamps in video for which clip is sampled. 
     clip_duration = 2.0 # Duration of clip used for each inference step.
     gif_imgs = []
     
@@ -261,7 +262,8 @@ async def Activity(source,device_id,source_1):
             video.write(img)
         video.release()
         await asyncio.sleep(1)
-        run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11)
+        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11))
+        det.start()
         avg_Batchcount_person = queue1.get()
         avg_Batchcount_vehicel= queue2.get()
         detect_count= queue3.get()
@@ -273,15 +275,20 @@ async def Activity(source,device_id,source_1):
         batch_person_id = queue9.get()
         track_elephant = queue10.get()
         avg_Batchcount_elephant = queue11.get()
+        print("#############################")
+        print(avg_Batchcount_elephant, avg_Batchcount_person, avg_Batchcount_vehicel)
+        print(detect_count, track_person, track_vehicle, track_type, batch_person_id, track_elephant)
+
         
     except IndexError:
         print("No Activity")
         # activity_list.append("No Activity")
         open('classes.txt','w')
         await asyncio.sleep(1)
-        run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11)
+        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11))
+        det.start()
         avg_Batchcount_person = queue1.get()
-        avg_Batchcount_vehicel = queue2.get()
+        avg_Batchcount_vehicel= queue2.get()
         detect_count= queue3.get()
         track_person = queue4.get()
         track_vehicle = queue5.get()
@@ -291,6 +298,9 @@ async def Activity(source,device_id,source_1):
         batch_person_id = queue9.get()
         track_elephant = queue10.get()
         avg_Batchcount_elephant = queue11.get()
+        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+        print(avg_Batchcount_elephant, avg_Batchcount_person, avg_Batchcount_vehicel)
+        print(detect_count, track_person, track_vehicle, track_type, batch_person_id, track_elephant)
     count_video += 1
 
 
@@ -349,8 +359,9 @@ async def BatchJson(source):
         activity_list.append(activity_list_box)
     return activity_list
           
-async def json_publish(primary):    
-    nc = await nats.connect(servers=["nats://216.48.181.154:5222"] , reconnect_time_wait= 50 ,allow_reconnect=True, connect_timeout=20, max_reconnect_attempts=60)
+async def json_publish(primary): 
+    nats_url = os.getenv('NATS_URL')   
+    nc = await nats.connect(servers=[nats_url] , reconnect_time_wait= 50 ,allow_reconnect=True, connect_timeout=20, max_reconnect_attempts=60)
     js = nc.jetstream()
     JSONEncoder = json.dumps(primary)
     json_encoded = JSONEncoder.encode()
@@ -373,22 +384,24 @@ async def batch_save(device_id, file_id):
     ct = datetime.datetime.now() # ct stores current time
     timestamp = str(ct)
     activity_list = await BatchJson(source="classes.txt")
+
+    # try:
     metapeople ={
                     "type":(track_type),
                     "track":(track_person),
                     "id":(batch_person_id),
-                    "activity":{"activities":activity_list}
+                    "activity":(activity_list)
                     }
     
     metaVehicle = {
                     "type":(track_type),
                     "track":(track_vehicle),
-                    "id":("Null"),
-                    "activity":("Null")
+                    "id":null,
+                    "activity":null
                     }
     metaElephant = {
                     "track":(track_elephant),
-                    "Elephent_count":(avg_Batchcount_elephant)
+                    "count":avg_Batchcount_elephant
                     }
     metaObj = {
                 "people":metapeople,
@@ -397,11 +410,11 @@ async def batch_save(device_id, file_id):
             }
     
     metaBatch = {
-        "Detect": (detect_count),
-        "Count": {"people_count":(avg_Batchcount_person),
-                    "vehicle_count":(avg_Batchcount_vehicel)} ,
-        "Object":metaObj,
-        "Cid":(detect_img_cid)
+        "detect": (detect_count),
+        "count": {"people_count":avg_Batchcount_person,
+                    "vehicle_count":avg_Batchcount_vehicel} ,
+        "object":metaObj,
+        "cid":detect_img_cid
     }
     
     primary = { "deviceid":(device_id),
@@ -410,8 +423,9 @@ async def batch_save(device_id, file_id):
                 "geo": {"latitude":'12.913632983105556',
                         "longitude":'77.58994246818435'}, 
                 "metaData": metaBatch}
+    
     print(primary , "Json final ")
-    Process(target= await json_publish(primary=primary)).start()
+    # Process(target= await json_publish(primary=primary)).start()
     detect_count = []
     avg_Batchcount_person = []
     avg_Batchcount_vehicel = []
@@ -419,7 +433,7 @@ async def batch_save(device_id, file_id):
     track_vehicle = []
     track_elephant = []
     activity_list.clear()
-    detect_img_cid = []
+    # detect_img_cid = []
     track_type = []
     batch_person_id = []
     avg_Batchcount_elephant = []
@@ -451,12 +465,12 @@ async def gst_data(file_id , device_id):
         print("done with work ")
         sem.release()
 
-    logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
-    logging.debug("Debug logging test...")
-    logging.info("Program is working as expected")
-    logging.warning("Warning, the program may not function properly")
-    logging.error("The program encountered an error")
-    logging.critical("The program crashed")
+    # logging.basicConfig(filename="log_20.txt", level=logging.DEBUG)
+    # logging.debug("Debug logging test...")
+    # logging.info("Program is working as expected")
+    # logging.warning("Warning, the program may not function properly")
+    # logging.error("The program encountered an error")
+    # logging.critical("The program crashed")
 
 async def gst_stream(device_id, location, device_type):
     
@@ -487,9 +501,11 @@ async def gst_stream(device_id, location, device_type):
         print(video_name_hls)
     
         if(device_type == "h.264"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} caps="application/x-rtp,viderate=30/1" ! rtph264depay name=depay-{device_id} ! tee name=t t. ! queue ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id} t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=1080, height=1080 ! x264enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} caps="application/x-rtp,viderate=30/1" ! rtph264depay name=depay-{device_id} ! tee name=t t. ! queue ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id} t. ! queue ! h264parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=1080, height=1080 ! x264enc ! mpegtsmux ! hlssink playlist-root=http://localhost:8060/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
         elif(device_type == "h.265"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} caps="application/x-rtp,viderate=30/1" ! rtph265depay name=depay-{device_id} ! tee name=t t. ! queue ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id} t. ! queue ! h265parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=1080, height=1080 ! x265enc ! mpegtsmux ! hlssink playlist-root=https://hls.ckdr.co.in/live/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} caps="application/x-rtp,viderate=30/1" ! rtph265depay name=depay-{device_id} ! tee name=t t. ! queue ! h265parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id} t. ! queue ! h265parse config_interval=-1 ! decodebin ! videoconvert ! videoscale ! video/x-raw,width=1080, height=1080 ! x265enc ! mpegtsmux ! hlssink playlist-root=http://localhost:8060/stream{device_id} playlist-location={hls_path}/{device_id}.m3u8 location={video_path}-%02d.ts target-duration=10 playlist-length=3 max-files=6'.format(location=location, path=video_name, device_id = device_id, hls_path = video_name_hls1, video_path = video_name_hls))
+        elif(device_type == "mp4"):
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} caps="application/x-rtp,viderate=30/1" ! rtph264depay name=depay-{device_id} ! tee name=t t. ! queue ! h264parse name=parse-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=10000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
 
         sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
 
@@ -505,6 +521,8 @@ async def gst_stream(device_id, location, device_type):
 
     except TypeError as e:
         print(TypeError," gstreamer streaming error >> ", e)
+
+    logging.error("The program encountered an error")
 
 def on_message(bus: Gst.Bus, message: Gst.Message, loop: GLib.MainLoop):
     mtype = message.type
@@ -550,7 +568,7 @@ async def main():
     # Start pipeline
     pipeline.set_state(Gst.State.PLAYING)
 
-    for i in range(1, 2):
+    for i in range(7, 10):
         stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
         await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i])
     

@@ -102,7 +102,7 @@ track_vehicle = []
 track_elephant = []
 batch_person_id = []
 detect_count = []
-detect_img_cid = []
+detect_img_cid = ''
 count_person =0
 known_whitelist_faces = []
 known_whitelist_id = []
@@ -226,7 +226,7 @@ def run(
         augment=False,  # augmented inference
         visualize=False,  # visualize features
         update=False,  # update all models
-        project=ROOT / 'Nats_output1/track',  # save results to project/name
+        project=ROOT / 'Nats_output/track',  # save results to project/name
         name='exp',  # save results to project/name
         exist_ok=False,  # existing project/name ok, do not increment
         line_thickness=2,  # bounding box thickness (pixels)
@@ -327,10 +327,6 @@ def run(
                     if names[int(c)] == "Person" :
                         print(f"{n}","line 338")
                         person_count.append(int(f"{n}"))
-                        did = '001'+ str(generate(size =4 ))
-                        print(did, "did unknown")
-                        batch_person_id.append(did)
-                        track_type.append("unknown")
                         print("person detected")
                     if names[int(c)] == "Vehicle":
                        vehicle_count.append(int(f"{n}"))
@@ -363,8 +359,6 @@ def run(
                                     results_whitelist = face_recognition.compare_faces(known_whitelist_faces, face_encoding, TOLERANCE)
                                     print(results_whitelist, "611")
                                     if True in results_whitelist:
-                                        track_type.clear()
-                                        batch_person_id.clear()
                                         did = '00'+ str(known_whitelist_id[results_whitelist.index(True)])
                                         print(did, "did 613")
                                         batch_person_id.append(did)
@@ -397,8 +391,6 @@ def run(
                                             known_blacklist_faces.append(face_encoding)
                                             results_blacklist = face_recognition.compare_faces(known_blacklist_faces, face_encoding, TOLERANCE)
                                             if True in results_blacklist:
-                                                track_type.clear()
-                                                batch_person_id.clear()
                                                 # did = '01'+ str(known_blacklist_id[results_blacklist.index(True)])
                                                 did = '01' + 'blacklist'
                                                 print("did 623", did)
@@ -429,8 +421,6 @@ def run(
                                                         
                                             else:
                                                 if len(face_did_encoding_store) == 0:
-                                                    track_type.clear()
-                                                    batch_person_id.clear()
                                                     did = '10'+ str(generate(size =4 ))
                                                     print(did, "did 642")
                                                     track_type.append("10")
@@ -456,8 +446,6 @@ def run(
                                                                 # results_unknown = face_recognition.compare_faces(np.array(value), face_encoding, TOLERANCE)
                                                                 print(results_unknown,"635")
                                                                 if True in results_unknown:
-                                                                    track_type.clear()
-                                                                    batch_person_id.clear()
                                                                     key_list = list(key)
                                                                     key_list[1] = '1'
                                                                     key = str(key_list)
@@ -475,7 +463,6 @@ def run(
                                                                     cv2.putText(im0, key , (face_location[3]+10, face_location[2]+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,0,200), FONT_THICKNESS)
                                                                     
                                                                 else:
-                                                                    batch_person_id.clear()
                                                                     did = '10'+ str(generate(size=4))
                                                                     print(did, "did 642")
                                                                     batch_person_id.append(did)
@@ -550,21 +537,21 @@ def run(
                 image_path1 = str(image_path) + '/detect.jpg'
                 cv2.imwrite(image_path1, im0) # to save detected image
 
-                if vid_path[i] != save_path:  # new video
-                    vid_path[i] = save_path
-                    if isinstance(vid_writer[i], cv2.VideoWriter):
-                        vid_writer[i].release()  # release previous video writer
-                    if vid_cap:  # video
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    else:  # stream
-                        fps, w, h = 30, im0.shape[1], im0.shape[0]
-                    save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
-                    vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                vid_writer[i].write(im0)
+                # if vid_path[i] != save_path:  # new video
+                #     vid_path[i] = save_path
+                #     if isinstance(vid_writer[i], cv2.VideoWriter):
+                #         vid_writer[i].release()  # release previous video writer
+                #     if vid_cap:  # video
+                #         fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                #         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                #         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                #     else:  # stream
+                #         fps, w, h = 30, im0.shape[1], im0.shape[0]
+                #     save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
+                #     vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                # vid_writer[i].write(im0)
 
-            prev_frames[i] = curr_frames[i]
+            # prev_frames[i] = curr_frames[i]
 
             # Print time (inference-only)
         LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
@@ -576,13 +563,19 @@ def run(
     try :
         avg = ceil(sum_count/len(person_count))
         avg_Batchcount_person.append(str(avg))
+        avg_person_count = int(avg)
     except ZeroDivisionError:
         avg_Batchcount_person.append("0")
+        avg_person_count = int(0)
+        track_person.append(0)
         print("No person found ")
         
     for iten in avg_Batchcount_person:
         for i in range(int(iten[0])):
             track_person.append(1)
+            did = '10'+ str(generate(size=4))
+            batch_person_id.append(did)
+            track_type.append("10")
         
     sum_count = 0
     for x in vehicle_count:
@@ -590,8 +583,11 @@ def run(
     try :
         avg = ceil(sum_count/len(vehicle_count))
         avg_Batchcount_vehicel.append(str(avg))
+        avg_veh_count = int(avg)
     except ZeroDivisionError:
         avg_Batchcount_vehicel.append("0")
+        avg_veh_count = int(0)
+        track_vehicle.append(0)
         print("No Vehicle found ")
     
     for iten in avg_Batchcount_vehicel:
@@ -604,9 +600,11 @@ def run(
     try :
         avg = ceil(sum_count/len(elephant_count))
         avg_Batchcount_elephant.append(str(avg))
+        avg_ele_count = int(avg)
     except ZeroDivisionError:
         avg_Batchcount_elephant.append("0")
         track_elephant.append(0)
+        avg_ele_count = int(0)
         print("No Elephant found ")
     
     for iten in avg_Batchcount_elephant:
@@ -619,22 +617,25 @@ def run(
         detect_count.append(0)
         
     # publish detected image to ipfs
-    command = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=image_path1)
-    output = sp.getoutput(command)
-    detect_img_cid.append(output)
+    ipfs_url = os.getenv('IPFS_URL')   
+    command = 'ipfs --api={url} add {file_path} -Q'.format(url=ipfs_url, file_path=image_path1) 
+    # ipfs chnage it to env var
+    detect_img_cid = sp.getoutput(command)
 
+    print(avg_ele_count, avg_person_count, avg_veh_count)
+    print(detect_count, track_person, track_vehicle, track_type, batch_person_id, track_elephant)
 
-    queue1.put(str(avg_Batchcount_person))
-    queue2.put(str(avg_Batchcount_vehicel))
-    queue3.put(str(detect_count))
-    queue4.put(str(track_person))
-    queue5.put(str(track_vehicle))
-    queue6.put(str(detect_img_cid))
-    queue7.put(str(save_dir))
-    queue8.put(str(track_type))
-    queue9.put(str(batch_person_id))
-    queue10.put(str(track_elephant))
-    queue11.put(str(avg_Batchcount_elephant))
+    queue1.put(avg_person_count)
+    queue2.put(avg_veh_count)
+    queue3.put(detect_count)
+    queue4.put(track_person)
+    queue5.put(track_vehicle)
+    queue6.put(detect_img_cid)
+    queue7.put(save_dir)
+    queue8.put(track_type)
+    queue9.put(batch_person_id)
+    queue10.put(track_elephant)
+    queue11.put(avg_ele_count)
 
     person_count.clear()
     vehicle_count.clear()
@@ -644,7 +645,6 @@ def run(
     track_person.clear()
     track_vehicle.clear()
     track_elephant.clear()
-    detect_img_cid.clear()
     track_type.clear()
     batch_person_id.clear()
     avg_Batchcount_elephant.clear()

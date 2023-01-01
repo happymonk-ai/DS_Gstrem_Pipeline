@@ -562,36 +562,36 @@ def run(
         sum_count += int(x)
     try :
         avg = ceil(sum_count/len(person_count))
-        avg_Batchcount_person.append(str(avg))
+        avg_Batchcount_person.append(avg)
         avg_person_count = int(avg)
     except ZeroDivisionError:
-        avg_Batchcount_person.append("0")
+        avg_Batchcount_person.append(0)
         avg_person_count = int(0)
         track_person.append(0)
         print("No person found ")
         
     for iten in avg_Batchcount_person:
-        for i in range(int(iten[0])):
+        for i in range(int(iten)):
             track_person.append(1)
-            did = '10'+ str(generate(size=4))
+            did = '10'+ str(generate(size =4 ))
             batch_person_id.append(did)
-            track_type.append("10")
+            track_type.append('10')
         
     sum_count = 0
     for x in vehicle_count:
         sum_count += int(x)
     try :
         avg = ceil(sum_count/len(vehicle_count))
-        avg_Batchcount_vehicel.append(str(avg))
-        avg_veh_count = int(avg)
+        avg_Batchcount_vehicel.append(avg)
+        avg_vehicle_count = int(avg)
     except ZeroDivisionError:
-        avg_Batchcount_vehicel.append("0")
-        avg_veh_count = int(0)
+        avg_Batchcount_vehicel.append(0)
         track_vehicle.append(0)
+        avg_vehicle_count = int(0)
         print("No Vehicle found ")
     
     for iten in avg_Batchcount_vehicel:
-        for i in range(int(iten[0])):
+        for i in range(int(iten)):
             track_vehicle.append(1)
 
     sum_count = 0
@@ -599,16 +599,16 @@ def run(
         sum_count += int(x)
     try :
         avg = ceil(sum_count/len(elephant_count))
-        avg_Batchcount_elephant.append(str(avg))
-        avg_ele_count = int(avg)
+        avg_Batchcount_elephant.append(avg)
+        avg_elephant_count = int(avg)
     except ZeroDivisionError:
-        avg_Batchcount_elephant.append("0")
+        avg_Batchcount_elephant.append(0)
         track_elephant.append(0)
-        avg_ele_count = int(0)
+        avg_elephant_count = int(0)
         print("No Elephant found ")
     
     for iten in avg_Batchcount_elephant:
-        for i in range(int(iten[0])):
+        for i in range(int(iten)):
             track_elephant.append(1)
         
     if len(person_count) > 0 or len(vehicle_count) > 0 or len(elephant_count) > 0 :
@@ -617,25 +617,21 @@ def run(
         detect_count.append(0)
         
     # publish detected image to ipfs
-    ipfs_url = os.getenv('IPFS_URL')   
-    command = 'ipfs --api={url} add {file_path} -Q'.format(url=ipfs_url, file_path=image_path1) 
-    # ipfs chnage it to env var
+    command = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=image_path1)
     detect_img_cid = sp.getoutput(command)
+    # detect_img_cid.append(output)
 
-    print(avg_ele_count, avg_person_count, avg_veh_count)
-    print(detect_count, track_person, track_vehicle, track_type, batch_person_id, track_elephant)
-
-    queue1.put(avg_person_count)
-    queue2.put(avg_veh_count)
-    queue3.put(detect_count)
-    queue4.put(track_person)
-    queue5.put(track_vehicle)
-    queue6.put(detect_img_cid)
-    queue7.put(save_dir)
-    queue8.put(track_type)
-    queue9.put(batch_person_id)
-    queue10.put(track_elephant)
-    queue11.put(avg_ele_count)
+    queue1.put(str(avg_person_count))
+    queue2.put(str(avg_vehicle_count))
+    queue3.put(str(detect_count))
+    queue4.put(str(track_person))
+    queue5.put(str(track_vehicle))
+    queue6.put(str(detect_img_cid))
+    queue7.put(str(save_dir))
+    queue8.put(str(track_type))
+    queue9.put(str(batch_person_id))
+    queue10.put(str(track_elephant))
+    queue11.put(str(avg_elephant_count))
 
     person_count.clear()
     vehicle_count.clear()
@@ -645,6 +641,7 @@ def run(
     track_person.clear()
     track_vehicle.clear()
     track_elephant.clear()
+    # detect_img_cid.clear()
     track_type.clear()
     batch_person_id.clear()
     avg_Batchcount_elephant.clear()

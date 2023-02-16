@@ -26,12 +26,12 @@ import threading
 import gc
 import datetime #datetime module to fetch current time when frame is detected
 import shutil
-import ast 
-from pytz import timezone 
-from datetime import datetime
+import ast
+from nats.aio.client import Client as NATS
+import nats
 
 #Detection
-from track import run
+from track_test import run
 # from track import lmdb_known
 # from track import lmdb_unknown
 
@@ -53,19 +53,34 @@ from torchvision.transforms._functional_video import normalize
 from pytorchvideo.data.ava import AvaLabeledVideoFramePaths
 from pytorchvideo.models.hub import slow_r50_detection # Another option is slowfast_r50_detection
 
-from visualization import VideoVisualizer 
+from visualization import VideoVisualizer
+
+from pytz import timezone
+from datetime import datetime 
+import imageio
+import subprocess as sp
 
 # face_detection
 # import lmdb
 
 path = "./Nats_output"
-# hls_path = "./Hls_output"
+hls_path = "./Hls_output"
+gif_path = "./Gif_output"
 
 if os.path.exists(path) is False:
     os.mkdir(path)
+    
+if os.path.exists(hls_path) is False:
+    os.mkdir(hls_path)
+    
+if os.path.exists(gif_path) is False:
+    os.mkdir(gif_path)
 
 start_flag = True
-    
+
+image_count = 0
+frames = []
+  
 # Multi-threading
 TOLERANCE = 0.62
 MODEL = 'cnn'
@@ -98,6 +113,8 @@ detect_img_cid = ''
 avg_Batchcount_elephant = 0
 null = None
 
+gst_str = ''
+
 queue1 = Queue()
 queue2 = Queue()
 queue3 = Queue()
@@ -121,6 +138,8 @@ image_arr = None
 
 device_types = ['', 'h.264', 'h.264', 'h.264', 'h.265', 'h.264', 'h.265', 'mp4', 'mp4', 'mp4', 'mp4', 'mp4', 'mp4', 'mp4']
 load_dotenv()
+
+nc_client = NATS()
 
 # activity
 cfg = get_cfg()
@@ -264,39 +283,44 @@ async def Activity(source,device_id,source_1):
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             video.write(img)
         video.release()
+        
         await asyncio.sleep(1)
-        det = Process(target= run(source=vide_save_path, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11))
+        det = Process(target= run(source=vide_save_path, queue1=queue1))
         det.start()
-        avg_Batchcount_person = queue1.get()
-        avg_Batchcount_vehicel= queue2.get()
-        detect_count= queue3.get()
-        track_person = queue4.get()
-        track_vehicle = queue5.get()
-        detect_img_cid = queue6.get()
-        track_dir = queue7.get()
-        track_type = queue8.get()
-        batch_person_id = queue9.get()
-        track_elephant = queue10.get()
-        avg_Batchcount_elephant = queue11.get()
+        batch_output = queue1.get()
+
+        avg_Batchcount_person = batch_output["avg_person_count"]
+        avg_Batchcount_vehicel= batch_output["avg_vehicle_count"]
+        detect_count = batch_output["detect_count"] 
+        track_person = batch_output["track_person"]
+        track_vehicle = batch_output["track_vehicle"]
+        detect_img_cid = batch_output["detect_img_cid"] 
+        track_dir = batch_output["save_dir"] 
+        track_type = batch_output["track_type"] 
+        batch_person_id = batch_output["batch_person_id"] 
+        track_elephant = batch_output["track_elephant"] 
+        avg_Batchcount_elephant = batch_output["avg_elephant_count"]
         
     except IndexError:
         print("No Activity")
         # activity_list.append("No Activity")
         open('classes.txt','w')
         await asyncio.sleep(1)
-        det = Process(target= run(source=source_1, queue1=queue1,queue2=queue2,queue3=queue3,queue4=queue4,queue5=queue5,queue6=queue6,queue7=queue7,queue8=queue8,queue9=queue9,queue10=queue10,queue11=queue11))
+        det = Process(target= run(source=source_1, queue1=queue1))
         det.start()
-        avg_Batchcount_person = queue1.get()
-        avg_Batchcount_vehicel = queue2.get()
-        detect_count= queue3.get()
-        track_person = queue4.get()
-        track_vehicle = queue5.get()
-        detect_img_cid = queue6.get()
-        track_dir = queue7.get()
-        track_type = queue8.get()
-        batch_person_id = queue9.get()
-        track_elephant = queue10.get()
-        avg_Batchcount_elephant = queue11.get()
+        batch_output = queue1.get()
+
+        avg_Batchcount_person = batch_output["avg_person_count"]
+        avg_Batchcount_vehicel= batch_output["avg_vehicle_count"]
+        detect_count = batch_output["detect_count"] 
+        track_person = batch_output["track_person"]
+        track_vehicle = batch_output["track_vehicle"]
+        detect_img_cid = batch_output["detect_img_cid"] 
+        track_dir = batch_output["save_dir"] 
+        track_type = batch_output["track_type"] 
+        batch_person_id = batch_output["batch_person_id"] 
+        track_elephant = batch_output["track_elephant"] 
+        avg_Batchcount_elephant = batch_output["avg_elephant_count"]
     count_video += 1
 
 
@@ -368,13 +392,11 @@ async def json_publish(primary):
     print("Activity is getting published")
 
 async def batch_save(device_data, file_id):
-    
+    # BatchId = generate(size= 8)
     device_id = device_data[0]
     device_urn = device_data[1]
     timestampp = device_data[2]
     batchid = device_data[3] 
-    
-    
     
     global avg_Batchcount_person, avg_Batchcount_vehicel,avg_Batchcount_elephant, track_person,track_vehicle,track_elephant,detect_count,detect_img_cid,track_dir,track_type,batch_person_id
 
@@ -443,7 +465,7 @@ async def batch_save(device_data, file_id):
     gc.collect()
     torch.cuda.empty_cache()
 
-async def gst_data(file_id , device_id):
+async def gst_data(file_id , device_data):
     
     global count 
     count = count + 1
@@ -477,23 +499,189 @@ async def gst_data(file_id , device_id):
     logging.warning("Warning, the program may not function properly")
     logging.error("The program encountered an error")
     logging.critical("The program crashed")
+    
+async def device_snap_pub(device_id, gif_cid, time_stamp):
+    nc = await nats.connect(servers=["nats://216.48.181.154:5222"] , reconnect_time_wait= 50 ,allow_reconnect=True, connect_timeout=20, max_reconnect_attempts=60)
+    js = nc.jetstream()
+    device_data = {
+        "deviceId": device_id,
+        "timestamp": time_stamp,
+        "thumbnail": gif_cid,
+        # "uri": "https://hls.ckdr.co.in/live/stream1/1.m3u8",
+        # "status": "active" 
+    }
+    JSONEncoder = json.dumps(device_data)
+    json_encoded = JSONEncoder.encode()
+    print(json_encoded)
+    print("Json encoded")
+    Subject = "service.device_thumbnail"
+    Stream_name = "service"
+    # await js.add_stream(name= Stream_name, subjects=[Subject])
+    ack = await js.publish(Subject, json_encoded)
+    print(f'Ack: stream={ack.stream}, sequence={ack.seq}')
+    print("Activity is getting published")
+    
+async def gif_creation(device_id, img_arr, timestamp):
+    global image_count, gif_path
+    
+    path = gif_path + '/' + str(timestamp).replace(' ','') + '.gif'
+    
+    image_count += 1
+    if (image_count < 30):
+        frames.append(img_arr)
+    elif (image_count >= 30):
+        print(timestamp)
+        print("Images added: ", len(frames))
+        print("Saving GIF file")
+        with imageio.get_writer(path, mode="I") as writer:
+            for idx, frame in enumerate(frames):
+                print("Adding frame to GIF file: ", idx + 1)
+                writer.append_data(frame)
+                
+        print("PATH:", path)
+        command = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=path)
+        gif_cid = sp.getoutput(command)
+        print(gif_cid)
+        await device_snap_pub(device_id = device_id, gif_cid = gif_cid, time_stamp = timestamp)
+        os.remove(path)
+        frames.clear()
+        image_count = 0
+    
+async def hls_stream(device_data):
+    
+    global gst_str
+        
+    camID = device_data['deviceId']
+    rtsp_URL = device_data['rtsp']
+    camera_type = device_data['videoEncodingInformation']
+    
+    print("Entering HLS Stream")
+    
+    # filename for hls
+    video_name_hls1 = hls_path + '/' + str(camID)
+    if not os.path.exists(video_name_hls1):
+        os.makedirs(video_name_hls1, exist_ok=True)
+        
+    print(video_name_hls1)
+    
+    def gst_to_opencv(sample):
+        buf = sample.get_buffer()
+        caps = sample.get_caps()
+        
+        # print(caps.get_structure(0).get_value('height'), caps.get_structure(0).get_value('width'))
+            
+        arr = np.ndarray(
+            (caps.get_structure(0).get_value('height'),
+            caps.get_structure(0).get_value('width')),
+            buffer=buf.extract_dup(0, buf.get_size()),
+            dtype=np.uint8)
 
-async def gst_stream(device_id, location, device_type):
+        return arr
+
+    def new_buffer(sink, data):
+        global image_arr
+        sample = sink.emit("pull-sample")
+        buffer = sample.get_buffer()
+        arr = gst_to_opencv(sample)
+        rgb_frame = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+        datetime_ist = str(datetime.now(timezone("Asia/Kolkata")).strftime('%Y-%m-%d %H:%M:%S.%f'))
+        asyncio.run(gif_creation(device_id=data ,img_arr=rgb_frame, timestamp=datetime_ist))     
+        return Gst.FlowReturn.OK
+    
+    # rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse config_interval=-1 name=parse-{device_id} ! decodebin name=decode-{device_id} ! videoconvert name=convert-{device_id} ! video/x-raw,format=YUY2 ! appsink name=sink-{device_id}
+    
+    try:
+        if(camera_type == 'h.264'):
+            pipeline = Gst.parse_launch('rtspsrc name=m_rtspsrc_{ID} !  rtph264depay name=m_depay_{ID} ! tee name=t t. ! queue ! h264parse config_interval=-1 name=m_parse_{ID} ! decodebin name=m_decode_{ID} ! appsink name=m_sink_{ID}'.format(ID = camID))
+        if(camera_type == 'h.265'):
+            pipeline = Gst.parse_launch('rtspsrc name=m_rtspsrc_{ID} !  rtph265depay name=m_depay_{ID} ! tee name=t t. ! queue ! h265parse config_interval=-1 name=m_parse_{ID} ! decodebin name=m_decode_{ID} ! appsink name=m_sink_{ID}'.format(ID = camID))
+
+        # source params
+        source = pipeline.get_by_name('m_rtspsrc_{ID}'.format(ID = camID))
+        source.set_property('latency', 30)
+        source.set_property('location', rtsp_URL)
+        source.set_property('protocols', 'tcp')
+        source.set_property('drop-on-latency', 'true')
+
+        # depay params
+        depay = pipeline.get_by_name('m_depay_{ID}'.format(ID = camID))
+        
+        parse = pipeline.get_by_name('m_parse_{ID}'.format(ID = camID))
+        
+        decode = pipeline.get_by_name('m_decode_{ID}'.format(ID = camID))
+        
+        # convert = pipeline.get_by_name('m_convert_{ID}'.format(ID = camID))
+        
+        # encode = pipeline.get_by_name('m_enc_{ID}'.format(ID = camID))
+        
+        # mux params
+        # mux = pipeline.get_by_name('m_mux_{ID}'.format(ID = camID))
+
+        # sink params
+        sink = pipeline.get_by_name('m_sink_{ID}'.format(ID = camID))
+        # sink_1 = pipeline.get_by_name('m_sink1_{ID}'.format(ID = camID))
+        
+        sink.set_property("emit-signals", True)
+        sink.connect("new-sample", new_buffer, camID)
+
+        # Location of the playlist to write
+        # sink_1.set_property('playlist-root', 'https://hls.ckdr.co.in/live/stream{device_id}'.format(device_id = camID))
+        # # Location of the playlist to write
+        # sink_1.set_property('playlist-location', '{file_path}/{file_name}.m3u8'.format(file_path = video_name_hls1, file_name = camID))
+        # # Location of the file to write
+        # sink_1.set_property('location', '{file_path}/segment.%01d.ts'.format(file_path = video_name_hls1))
+        # # The target duration in seconds of a segment/file. (0 - disabled, useful for management of segment duration by the streaming server)
+        # sink_1.set_property('target-duration', 10)
+        # # Length of HLS playlist. To allow players to conform to section 6.3.3 of the HLS specification, this should be at least 3. If set to 0, the playlist will be infinite.
+        # sink_1.set_property('playlist-length', 3)
+        # # Maximum number of files to keep on disk. Once the maximum is reached,old files start to be deleted to make room for new ones.
+        # sink_1.set_property('max-files', 6)
+        
+        if not source or not sink or not pipeline or not depay or not parse or not decode:
+            print("Not all elements could be created.")
+
+        # Start playing
+        ret = pipeline.set_state(Gst.State.PLAYING)
+        if ret == Gst.StateChangeReturn.SUCCESS:
+            print("Successfully set the pipeline to the playing state.")
+            
+        if ret == Gst.StateChangeReturn.FAILURE:
+            print("Unable to set the pipeline to the playing state.")
+            
+    except TypeError as e:
+        print(TypeError," gstreamer hls streaming error >> ", e)
+
+async def gst_stream(gst_stream_data):
+     
+    device_id = gst_stream_data[0]
+    urn = gst_stream_data[1]
+    location = gst_stream_data[2]
+    device_type = gst_stream_data[3]
     
     def format_location_callback(mux, file_id, data):
+        
+        device_data = []
         global start_flag
+        device_data.append(data)
+        device_data.append(urn)
+        device_data.append(timestampp)
+        
         if file_id == 0:
             if start_flag:
                 pass
             else:
                 file_id = 4
-                asyncio.run(gst_data(file_id , data))
+                asyncio.run(gst_data(file_id , device_data))
         else:
             file_id = file_id - 1
             start_flag = False
-            asyncio.run(gst_data(file_id , data))
+            asyncio.run(gst_data(file_id , device_data))
 
         print(file_id, '-------', data)
+        
+    def frame_timestamp(identity, buffer, data):
+        global timestampp
+        timestampp =  datetime.now(timezone("Asia/Kolkata")).strftime('%Y-%m-%d %H:%M:%S.%f')
 
     try:
         # filename for mp4
@@ -503,90 +691,88 @@ async def gst_stream(device_id, location, device_type):
             os.makedirs(video_name1, exist_ok=True)
         video_name = video_name1 + '/Nats_video'+str(device_id)
         print(video_name)
-
-        # # filename for hls
-        # video_name_hls1 = hls_path + '/' + str(device_id)
-        # if not os.path.exists(video_name_hls1):
-        #     os.makedirs(video_name_hls1, exist_ok=True)
-        # video_name_hls = video_name_hls1 + '/Hls_video'+str(device_id)
-        # print(video_name_hls)
     
-        if(device_type == "h.264"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videorate name=rate-{device_id} ! video/x-raw,framerate=25/1 ! x264enc name=enc-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
-        elif(device_type == "h.265"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videorate name=rate-{device_id} ! video/x-raw,framerate=25/1 ! x264enc name=enc-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
-        elif(device_type == "mp4"):
-            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videorate name=rate-{device_id} ! video/x-raw,framerate=25/1 ! x264enc name=enc-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+        if((device_type.lower()) == "h264"):
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! identity name=ident-{device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videorate name=rate-{device_id} ! video/x-raw,framerate=25/1 ! x264enc name=enc-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+        elif((device_type.lower()) == "h265"):
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! identity name=ident-{device_id} ! rtph265depay name=depay-{device_id} ! h265parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videorate name=rate-{device_id} ! video/x-raw,framerate=25/1 ! x264enc name=enc-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
+        elif((device_type.lower()) == "mp4"):
+            pipeline = Gst.parse_launch('rtspsrc location={location} protocols="tcp" name={device_id} ! identity name=ident-{device_id} ! rtph264depay name=depay-{device_id} ! h264parse name=parse-{device_id} ! decodebin name=decode-{device_id} ! videorate name=rate-{device_id} ! video/x-raw,framerate=25/1 ! x264enc name=enc-{device_id} ! splitmuxsink location={path}-%01d.mp4 max-files=5 max-size-time=20000000000 name=sink-{device_id}'.format(location=location, path=video_name, device_id = device_id))
 
         sink = pipeline.get_by_name('sink-{device_id}'.format(device_id=device_id))
-
+        identity = pipeline.get_by_name('ident-{device_id}'.format(device_id=device_id))
+    
         if not pipeline:
             print("Not all elements could be created.")
+
         
+        identity.connect("handoff", frame_timestamp, device_id)
         sink.connect("format-location", format_location_callback, device_id)
         
         # Start playing
         ret = pipeline.set_state(Gst.State.PLAYING)
+        if ret == Gst.StateChangeReturn.SUCCESS:
+            print("Able to set the pipeline to the playing state.")
         if ret == Gst.StateChangeReturn.FAILURE:
             print("Unable to set the pipeline to the playing state.")
 
     except TypeError as e:
         print(TypeError," gstreamer streaming error >> ", e)
+        
+async def cb(msg):
+    try :
+        print("entered callback")
+        data = (msg.data)
+        data  = data.decode()
+        data = json.loads(data)
+        
+        if "urn" not in data:
+            data["urn"] = "uuid:eaadf637-a191-4ae7-8156-07433934718b"
+        
+        gst_stream_data = [data["deviceId"], data["urn"], data["rtsp"], data["videoEncodingInformation"]]
+        
+        if (data):
+            p2 = Process(target = await gst_stream(gst_stream_data))
+            p2.start()
+            
+            # p3 = Process(target = await hls_stream(data))
+            # p3.start()
 
-def on_message(bus: Gst.Bus, message: Gst.Message, loop: GLib.MainLoop):
-    mtype = message.type
-    """
-        Gstreamer Message Types and how to parse
-        https://lazka.github.io/pgi-docs/Gst-1.0/flags.html#Gst.MessageType
-    """
-    if mtype == Gst.MessageType.EOS:
-        print("End of stream")
-        loop.quit()
-
-    elif mtype == Gst.MessageType.ERROR:
-        err, debug = message.parse_error()
-        print(("Error received from element %s: %s" % (
-            message.src.get_name(), err)))
-        print(("Debugging information: %s" % debug))
-        loop.quit()
-
-    elif mtype == Gst.MessageType.STATE_CHANGED:
-        if isinstance(message.src, Gst.Pipeline):
-            old_state, new_state, pending_state = message.parse_state_changed()
-            print(("Pipeline state changed from %s to %s." %
-            (old_state.value_nick, new_state.value_nick)))
-    return True
+        subject = msg.subject
+        reply = msg.reply
+        await nc_client.publish(msg.reply,b'Received!')
+        print("Received a message on '{subject} {reply}': {data}".format(
+            subject=subject, reply=reply, data=data))
+        
+    except TypeError as e:
+        print(TypeError," Nats msg callback error >> ", e)
 
 async def main():
-
-    # await lmdb_known()
-    # await lmdb_unknown()
     
     pipeline = Gst.parse_launch('fakesrc ! queue ! fakesink')
-
-    # Init GObject loop to handle Gstreamer Bus Events
-    loop = GLib.MainLoop()
-
-    bus = pipeline.get_bus()
-    # allow bus to emit messages to main thread
-    bus.add_signal_watch()
-
-    # Add handler to specific signal
-    bus.connect("message", on_message, loop)
-
-    # Start pipeline
-    pipeline.set_state(Gst.State.PLAYING)
-
-    for i in range(3, 4):
-        stream_url = os.getenv('RTSP_URL_{id}'.format(id=i))
-        await gst_stream(device_id=i ,location=stream_url, device_type=device_types[i])
     
-    try:
-        loop.run()
-    except Exception:
-        traceback.print_exc()
-        loop.quit()
-
+    # Start pipeline
+    ret = pipeline.set_state(Gst.State.PLAYING)
+    if ret == Gst.StateChangeReturn.SUCCESS:
+        print("Able to set the pipeline to the playing state.")
+    if ret == Gst.StateChangeReturn.FAILURE:
+        print("Unable to set the pipeline to the playing state.")
+        
+    # data = {
+    #     "deviceId": "uuid:eaadf637-a191-4ae7-8156-07433934718b",
+    #     "rtsp": "rtsp://happymonk:admin123@streams.ckdr.co.in:3554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif",
+    #     "videoEncodingInformation": "h.264"  
+    # }
+        
+    # p3 = Process(target = await hls_stream(data))
+    # p3.start()
+    
+    await nc_client.connect(servers=["nats://216.48.181.154:5222"])
+    print("Nats Connected")
+    
+    await nc_client.subscribe("service.device_discovery", cb=cb)
+    print("subscribed")
+    
     # Stop Pipeline
     pipeline.set_state(Gst.State.NULL)
     del pipeline

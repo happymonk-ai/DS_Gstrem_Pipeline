@@ -49,11 +49,13 @@ import cv2
 from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder, LabelEncoder
 from collections import Counter
 
-# #face_detection
-# import lmdb
+#face_detection
+import lmdb
 # import face_lmdb
 import json
 import face_recognition 
+
+import datetime
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # yolov5 strongsort root directory
@@ -87,7 +89,7 @@ model = DetectMultiBackend(WEIGHTS / '27Sep_2022.pt', device=devices, dnn=False,
 stride, names, pt = model.stride, model.names, model.pt
 imgsz = check_img_size((640, 640), s=stride)  # check image size
 
-TOLERANCE = 0.62
+TOLERANCE = 0.70
 FRAME_THICKNESS = 3
 FONT_THICKNESS = 2
 MODEL = 'svm'
@@ -110,6 +112,10 @@ known_blacklist_faces = []
 known_blacklist_id = []
 face_did_encoding_store = dict()
 track_type = []
+batch_count = 0
+batch_info = dict()
+
+member_type = {'00': 'whitelist', '01': 'blacklist', '10': 'unknown', '11': 'unknown_repeat'}
 
 # #load lmdb
 # env = lmdb.open('./lmdb/face-detection.lmdb',
@@ -119,7 +125,7 @@ track_type = []
 # known_db = env.open_db(b'known')
 # unknown_db = env.open_db(b'unknown')
 
-# async def lmdb_known():
+# def lmdb_known():
 #     # Iterate each DB to show the keys are sorted:
 #     with env.begin() as txn:
 #         list1 = list(txn.cursor(db=known_db))
@@ -156,7 +162,7 @@ track_type = []
             
 #     print(db_count_whitelist, "total whitelist person")
 
-# async def lmdb_unknown():
+# def lmdb_unknown():
 #     # Iterate each DB to show the keys are sorted:
 #     with env.begin() as txn:
 #         list2 = list(txn.cursor(db=unknown_db))
@@ -197,16 +203,6 @@ track_type = []
 def run(
         source = ROOT,
         queue1 = Queue(),
-        queue2 = Queue(),
-        queue3 = Queue(),
-        queue4 = Queue(),
-        queue5 = Queue(),
-        queue6 = Queue(),
-        queue7 = Queue(),
-        queue8 = Queue(),
-        queue9 = Queue(),
-        queue10 = Queue(),
-        queue11 = Queue(),
         yolo_weights=WEIGHTS / '27Sep_2022.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
@@ -236,7 +232,8 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
 ):
-
+    batchId = batch_count + 1
+    batch_info[str(batchId)]={}
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     # Directories
@@ -268,9 +265,11 @@ def run(
     # Run tracking
     # frame_count = 0
     #model.warmup(imgsz=(1 if pt else nr_sources, 3, *imgsz))  # warmup
+    
     dt, seen = [0.0, 0.0, 0.0, 0.0], 0
     curr_frames, prev_frames = [None] * nr_sources, [None] * nr_sources
-    for frame_idx, (path, im, im0s, vid_cap, s) in enumerate(dataset):
+    for frame_idx, (path, im, im0s, vid_cap, s) in enumerate(dataset):  
+        batch_info[str(batchId)][str(frame_idx + 1)]={}
         t1 = time_sync()
         im = torch.from_numpy(im).to(devices)
         im = im.half() if half else im.float()  # uint8 to fp16/32
@@ -316,24 +315,41 @@ def run(
                     tracker_list[i].tracker.camera_update(prev_frames[i], curr_frames[i])
 
             if det is not None and len(det):
+                
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()  # xyxy
 
                 # Print results
                 for c in det[:, -1].unique():
                     global vehicle_count , license, detect_image, elephant_count
+                    ppl_cnt = 0
+                    veh_cnt = 0
+                    ele_cnt = 0
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
                     if names[int(c)] == "Person" :
                         print(f"{n}","line 338")
+                        ppl_cnt = (int(f"{n}"))
                         person_count.append(int(f"{n}"))
                         print("person detected")
                     if names[int(c)] == "Vehicle":
                        vehicle_count.append(int(f"{n}"))
+                       veh_cnt = (int(f"{n}"))
+                       batch_info[str(batchId)][str(frame_idx + 1)]={'vehicle_count':(int(f"{n}"))}
                        print("vehicel detected")
                     if names[int(c)] == "Elephant":
                        elephant_count.append(int(f"{n}"))
+                       ele_cnt = (int(f"{n}"))
+                       batch_info[str(batchId)][str(frame_idx + 1)]={'elephant_count':(int(f"{n}"))}
                        print("elephant detected")
+                
+                batch_info[str(batchId)][str(frame_idx + 1)]={'person_count':ppl_cnt, 'vehicle_count':veh_cnt, 'elephant_count':ele_cnt, 'timestamp':str(datetime.datetime.now())}
+                batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"] = {}
+                # print("---------------------------------------------------------------------------------------")
+                # print(batch_info)
+                # print("---------------------------------------------------------------------------------------")
+
+
                 for c in det[:,-1]:
                     global personDid , count_person 
                     # if frame_count % 10 == 0: 
@@ -348,7 +364,7 @@ def run(
                             image = im0 # if im0 does not work, try with im1
                             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-                            locations = face_recognition.face_locations(image, model=MODEL)
+                            locations = face_recognition.face_locations(image)
 
                             encodings = face_recognition.face_encodings(image, locations)
                                 
@@ -357,14 +373,19 @@ def run(
                             for face_encoding ,face_location in zip(encodings, locations):
                                     print(np.shape(known_whitelist_faces), "known_whitelist_faces", np.shape(face_encoding),"face_encoding")
                                     results_whitelist = face_recognition.compare_faces(known_whitelist_faces, face_encoding, TOLERANCE)
+                                    faceids = face_recognition.face_distance(known_whitelist_faces,face_encoding)
+                                    matchindex = np.argmin(faceids)
                                     print(results_whitelist, "611")
-                                    if True in results_whitelist:
-                                        did = '00'+ str(known_whitelist_id[results_whitelist.index(True)])
+                                    if results_whitelist[matchindex]:
+                                        did = '00'+ str(known_whitelist_id[matchindex])
                                         print(did, "did 613")
+                                        batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)] = {}
+                                        batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)]["type"] = "known_whitelist"
                                         batch_person_id.append(did)
                                         track_type.append("00")
-                                        ct = datetime.datetime.now() # ct stores current time
-                                        timestamp.append(str(ct))
+                                        for k in member_type.keys():
+                                            if(k == '00'):
+                                                batch_info[str(batchId)][str(frame_idx + 1)].update({'member_data':{'did':did, 'type':member_type[k]}})
                                         if did in face_did_encoding_store.keys():
                                             face_did_encoding_store[did].append(face_encoding)
                                             top_left = (face_location[3], face_location[0])
@@ -390,14 +411,15 @@ def run(
                                     else:
                                             known_blacklist_faces.append(face_encoding)
                                             results_blacklist = face_recognition.compare_faces(known_blacklist_faces, face_encoding, TOLERANCE)
-                                            if True in results_blacklist:
-                                                # did = '01'+ str(known_blacklist_id[results_blacklist.index(True)])
-                                                did = '01' + 'blacklist'
+                                            faceids = face_recognition.face_distance(known_blacklist_faces,face_encoding)
+                                            matchindex = np.argmin(faceids)
+                                            if results_blacklist[matchindex]:
+                                                did = '01'+ str(known_blacklist_id[matchindex])
                                                 print("did 623", did)
+                                                batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)] = {}
+                                                batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)]["type"] = "known_blacklist"
                                                 batch_person_id.append(did)
                                                 track_type.append("01")
-                                                ct = datetime.datetime.now() # ct stores current time
-                                                timestamp.append(str(ct))
                                                 if did in face_did_encoding_store.keys():
                                                     face_did_encoding_store[did].append(face_encoding)
                                                     top_left = (face_location[3], face_location[0])
@@ -423,6 +445,8 @@ def run(
                                                 if len(face_did_encoding_store) == 0:
                                                     did = '10'+ str(generate(size =4 ))
                                                     print(did, "did 642")
+                                                    batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)] = {}
+                                                    batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)]["type"] = "unknown_first_time"
                                                     track_type.append("10")
                                                     batch_person_id.append(did)
                                                     face_did_encoding_store[did] = list(face_encoding)
@@ -444,14 +468,18 @@ def run(
                                                                 print(np.shape(np.transpose(np.array(value))), "value 642" ,np.shape(value) ,"value orginal",np.shape(face_encoding), "face_encoding")
                                                                 results_unknown = face_recognition.compare_faces(np.transpose(np.array(value)), face_encoding, TOLERANCE)
                                                                 # results_unknown = face_recognition.compare_faces(np.array(value), face_encoding, TOLERANCE)
+                                                                faceids = face_recognition.face_distance(np.transpose(np.array(value)),face_encoding)
                                                                 print(results_unknown,"635")
-                                                                if True in results_unknown:
+                                                                matchindex = np.argmin(faceids)
+                                                                if results_unknown[matchindex]:
                                                                     key_list = list(key)
                                                                     key_list[1] = '1'
                                                                     key = str(key_list)
                                                                     print(key, "did 637")
                                                                     batch_person_id.append(key)
                                                                     track_type.append("11")
+                                                                    batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)] = {}
+                                                                    batch_info[str(batchId)][str(frame_idx + 1)]["faces_data"][str(did)]["type"] = "unknown_repeat"
                                                                     face_did_encoding_store[key].append(face_encoding)
                                                                     top_left = (face_location[3], face_location[0])
                                                                     bottom_right = (face_location[1], face_location[2])
@@ -512,6 +540,11 @@ def run(
                             id = int(id)  # integer id
                             label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
                                 (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
+                            
+                            print("-------------------------------------------------------------------")
+                            print(label)
+                            print("-------------------------------------------------------------------")
+                            
                             annotator.box_label(bboxes, label, color=colors(c, True))
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
@@ -536,22 +569,13 @@ def run(
                     os.makedirs(image_path, exist_ok=True)
                 image_path1 = str(image_path) + '/detect.jpg'
                 cv2.imwrite(image_path1, im0) # to save detected image
-
-                # if vid_path[i] != save_path:  # new video
-                #     vid_path[i] = save_path
-                #     if isinstance(vid_writer[i], cv2.VideoWriter):
-                #         vid_writer[i].release()  # release previous video writer
-                #     if vid_cap:  # video
-                #         fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                #         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                #         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                #     else:  # stream
-                #         fps, w, h = 30, im0.shape[1], im0.shape[0]
-                #     save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
-                #     vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                # vid_writer[i].write(im0)
-
-            # prev_frames[i] = curr_frames[i]
+                
+                # publish detected image to ipfs
+                command = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=image_path1)
+                detect_img_cid = sp.getoutput(command)
+                # detect_img_cid.append(output)
+    
+                # batch_info[str(batchId)][str(frame_idx + 1)]={'frame_cid':(str(detect_img_cid))}
 
             # Print time (inference-only)
         LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
@@ -615,23 +639,23 @@ def run(
         detect_count.append(1)
     else:
         detect_count.append(0)
-        
-    # publish detected image to ipfs
-    command = 'ipfs --api=/ip4/216.48.181.154/tcp/5001 add {file_path} -Q'.format(file_path=image_path1)
-    detect_img_cid = sp.getoutput(command)
-    # detect_img_cid.append(output)
 
-    queue1.put(str(avg_person_count))
-    queue2.put(str(avg_vehicle_count))
-    queue3.put(str(detect_count))
-    queue4.put(str(track_person))
-    queue5.put(str(track_vehicle))
-    queue6.put(str(detect_img_cid))
-    queue7.put(str(save_dir))
-    queue8.put(str(track_type))
-    queue9.put(str(batch_person_id))
-    queue10.put(str(track_elephant))
-    queue11.put(str(avg_elephant_count))
+    print(batch_info)
+    batch_output = {}
+
+    batch_output["avg_person_count"] = str(avg_person_count)
+    batch_output["avg_vehicle_count"] = str(avg_vehicle_count)
+    batch_output["detect_count"] = str(detect_count)
+    batch_output["track_person"] = str(track_person)
+    batch_output["track_vehicle"] = str(track_vehicle)
+    batch_output["detect_img_cid"] = str(detect_img_cid)
+    batch_output["save_dir"] = str(save_dir)
+    batch_output["track_type"] = str(track_type)
+    batch_output["batch_person_id"] = str(batch_person_id)
+    batch_output["track_elephant"] = str(track_elephant)
+    batch_output["avg_elephant_count"] = str(avg_elephant_count)
+
+    queue1.put(batch_output)
 
     person_count.clear()
     vehicle_count.clear()
@@ -641,7 +665,6 @@ def run(
     track_person.clear()
     track_vehicle.clear()
     track_elephant.clear()
-    # detect_img_cid.clear()
     track_type.clear()
     batch_person_id.clear()
     avg_Batchcount_elephant.clear()
@@ -660,4 +683,6 @@ def run(
 
 
 if __name__ == "__main__":
-    run(source="gray_scale.mp4")
+    # lmdb_known()
+    # lmdb_unknown()
+    run(source="/home/nivetheni/DS_Gstrem_Pipeline/Nats_video3-8_Trim.mp4")

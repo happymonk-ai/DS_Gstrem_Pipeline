@@ -185,7 +185,7 @@ pydot==1.4.2
 pyflakes==2.5.0
 Pygments==2.13.0
 PyGObject==3.42.2
-PyICU==2.4.2
+#PyICU==2.4.2
 PyJWT==1.7.1
 pymacaroons==0.13.0
 Pympler==1.0.1

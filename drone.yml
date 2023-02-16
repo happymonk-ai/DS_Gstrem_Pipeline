@@ -15,4 +15,4 @@ steps:
   when:
     branch: staging
   depends_on:
-  - push
+  - build

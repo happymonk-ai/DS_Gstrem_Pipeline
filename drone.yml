@@ -4,15 +4,21 @@ name: ds_pipeline
 
 steps:
   - name: build
-    image: docker:dind
+    image: docker
     trusted: true
+    volume_mounts:
+      - name: docker_sock
+        path: /var/run/docker.sock
     commands:
       - dockerd --host=unix:///drone/docker.sock
       - docker compose build
 
   - name: deploy
-    image: docker:dind
+    image: docker
     trusted: true
+    volume_mounts:
+      - name: docker_sock
+        path: /var/run/docker.sock
     commands:
       - dockerd --host=unix:///drone/docker.sock
       - docker compose up -d
@@ -20,3 +26,8 @@ steps:
       branch: staging
     depends_on:
       - build
+      
+volumes:
+  - name: docker_sock
+    host:
+      path: /var/run/docker.sock

@@ -8,13 +8,13 @@ platform:
 
 steps:
 - name: build
-  image: plugins/docker
+  image: docker
   commands:
   - docker run --rm --gpus all nvidia/cuda nvidia-smi
   - docker build -t ds_gstreamer_pipeline
 
 - name: deploy
-  image: plugins/docker
+  image: docker
   commands:
   - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
   when:

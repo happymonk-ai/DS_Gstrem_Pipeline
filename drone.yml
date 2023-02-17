@@ -4,7 +4,7 @@ name: docker-compose
 
 steps:
 - name: build
-  image: plugins/docker
+  image: plugins/docker-compose
   commands:
   - docker compose build
 

@@ -7,14 +7,13 @@ steps:
     image: docker:dind
     commands:
       - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
-      - docker run --rm --gpus all nvidia/cuda nvidia-smi
-      - docker build -t ds_gstreamer_pipeline
+      - docker compose build
 
   - name: deploy
     image: docker:dind
     commands:
       - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
-      - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
+      - docker compose up -d
     when:
       branch: staging
     depends_on:

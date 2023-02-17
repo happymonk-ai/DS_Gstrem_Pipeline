@@ -4,14 +4,17 @@ name: docker-compose
 
 steps:
 - name: build
-  image: docker/compose:1.29.2
+  image: docker
   commands:
   - docker-compose build
 
 - name: deploy
-  image: docker/compose:1.29.2
-  commands:
-  - docker-compose up -d
+  image: plugins/docker-compose
+  settings:
+    docker_compose_files: docker-compose.yml
+    project_name: ds_gstreamer_pipeline
+    action: up
+    with_registry_auth: true
   when:
     branch: staging
   depends_on:

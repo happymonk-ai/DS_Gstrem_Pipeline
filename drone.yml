@@ -6,7 +6,7 @@ steps:
 - name: build
   image: plugins/docker
   commands:
-  - docker-compose build
+  - docker compose build
 
 - name: deploy
   image: plugins/docker-compose

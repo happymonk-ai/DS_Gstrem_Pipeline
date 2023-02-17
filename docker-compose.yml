@@ -1,0 +1,15 @@
+services:
+   detection:
+      build:
+         context: .
+         dockerfile: Dockerfile
+      restart: unless-stopped
+      ports:
+         - '6000:6000'
+      deploy:
+         resources:
+            reservations:
+               devices:
+                  - driver: nvidia
+                    count: 1
+                    capabilities: [gpu]

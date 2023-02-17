@@ -5,6 +5,7 @@ name: ds_pipeline
 steps:
   - name: build
     image: docker:dind
+    trusted: true
     privileged: true
     commands:
       - dockerd --host=unix:///drone/docker.sock
@@ -12,6 +13,7 @@ steps:
 
   - name: deploy
     image: docker:dind
+    trusted: true
     privileged: true
     commands:
       - dockerd --host=unix:///drone/docker.sock

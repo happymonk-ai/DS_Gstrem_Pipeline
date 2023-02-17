@@ -6,12 +6,12 @@ steps:
 - name: build
   image: docker/compose:1.29.2
   commands:
-  - docker compose build
+  - docker-compose build
 
 - name: deploy
   image: docker/compose:1.29.2
   commands:
-  - docker compose up -d
+  - docker-compose up -d
   when:
     branch: staging
   depends_on:

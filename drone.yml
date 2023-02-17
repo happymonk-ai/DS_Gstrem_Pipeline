@@ -10,7 +10,7 @@ steps:
     commands:
       - docker run --rm --gpus all nvidia/cuda nvidia-smi
       - docker build -t ds_gstreamer_pipeline
-      
+
   - name: deploy
     image: docker
     volumes:

@@ -4,7 +4,7 @@ name: ds_pipeline
 
 steps:
   - name: build
-    image: docker
+    image: plugins/docker
     trusted: true
     volume_mounts:
       - name: docker_sock
@@ -14,7 +14,7 @@ steps:
       - docker compose build
 
   - name: deploy
-    image: docker
+    image: plugins/docker
     trusted: true
     volume_mounts:
       - name: docker_sock

@@ -6,6 +6,8 @@ steps:
 - name: build
   image: docker/compose:1.29.2
   commands:
+  - echo $PATH
+  - ls -a
   - docker-compose build
 
 - name: deploy

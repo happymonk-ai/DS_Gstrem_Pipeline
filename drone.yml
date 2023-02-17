@@ -1,4 +1,4 @@
-ind: pipeline
+kind: pipeline
 type: docker
 name: ds_pipeline
 
@@ -7,22 +7,19 @@ platform:
   arch: amd64
 
 steps:
-  - name: build
-      image: docker
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-      commands:
-        - docker run --rm --gpus all nvidia/cuda nvidia-smi
-        - docker build -t ds_gstreamer_pipeline
-
-
-  - name: deploy
+- name: build
     image: docker
     volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock
     commands:
-    - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
-    when:
-      branch: staging
-    depends_on:
-    - build
+      - docker run --rm --gpus all nvidia/cuda nvidia-smi
+      - docker build -t ds_gstreamer_pipeline
+
+- name: deploy
+  image: docker
+  commands:
+  - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
+  when:
+    branch: staging
+  depends_on:
+  - build

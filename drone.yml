@@ -6,13 +6,13 @@ steps:
   - name: build
     image: docker/dind
     commands:
-      - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375
+#       - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375
       - docker compose build
 
   - name: deploy
     image: docker/dind
     commands:
-      - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375
+#       - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375
       - docker compose up -d
     when:
       branch: staging

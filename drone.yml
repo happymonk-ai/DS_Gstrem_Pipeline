@@ -4,27 +4,27 @@ name: ds_pipeline
 
 steps:
   - name: build
-    image: nvidia-docker
+    image: docker:dind
     trusted: true
     privileged: true
-#     volume_mounts:
-#       - name: docker_sock
-#         path: /var/run/docker.sock
+    volume_mounts:
+      - name: docker_sock
+        path: /var/run/docker.sock
     commands:
-#       - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
+      - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &
 #       - dockerd --experimental &
-#       - sleep 5
+      - sleep 5
 #       - docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
       - docker run --rm --runtime=nvidia nvidia/cuda nvidia-smi
       - docker build -t ds_gstreamer_pipeline
 
   - name: deploy
-    image: nvidia-docker
+    image: ocker:dind
     trusted: true
     privileged: true
-#     volume_mounts:
-#       - name: docker_sock
-#         path: /var/run/docker.sock
+    volume_mounts:
+      - name: docker_sock
+        path: /var/run/docker.sock
     commands:
       - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
     when:
@@ -32,10 +32,10 @@ steps:
     depends_on:
       - build
 
-# volumes:
-#   - name: docker_sock
-#     host:
-#       path: /var/run/docker.sock
+volumes:
+  - name: docker_sock
+    host:
+      path: /var/run/docker.sock
 
 # steps:
 #   - name: build

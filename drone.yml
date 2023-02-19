@@ -8,16 +8,14 @@ steps:
     trusted: true
     privileged: true
     commands:
-      - dockerd --host=unix:///drone/docker.sock &
-      - docker-compose build
+      - dockerd --host=unix:///drone/docker.sock && docker-compose build
 
   - name: deploy
     image: docker:dind
     trusted: true
     privileged: true
     commands:
-      - dockerd --host=unix:///drone/docker.sock &
-      - docker compose up -d
+      - dockerd --host=unix:///drone/docker.sock && docker compose up -d
     when:
       branch: staging
     depends_on:

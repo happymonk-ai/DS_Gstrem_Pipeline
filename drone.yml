@@ -7,8 +7,9 @@ steps:
     image: docker
     trusted: true
     privileged: true
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
+    volume_mounts:
+      - name: docker_sock
+        path: /var/run/docker.sock
     commands:
       - docker run --rm --gpus all nvidia/cuda nvidia-smi
       - docker build -t ds_gstreamer_pipeline
@@ -17,12 +18,20 @@ steps:
     image: docker
     trusted: true
     privileged: true
+    volume_mounts:
+      - name: docker_sock
+        path: /var/run/docker.sock
     commands:
       - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
     when:
       branch: staging
     depends_on:
       - build
+
+volumes:
+  - name: docker_sock
+    host:
+      path: /var/run/docker.sock
 
 # steps:
 #   - name: build

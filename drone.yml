@@ -10,7 +10,7 @@ steps:
         path: /var/run/docker.sock
     commands:
       - docker run --rm --gpus all nvidia/cuda nvidia-smi
-      - docker build -t ds_gstreamer_pipeline
+      - docker build -t ds_gstreamer_pipeline:latest
 
   - name: deploy
     image: docker
@@ -18,7 +18,7 @@ steps:
       - name: docker_sock
         path: /var/run/docker.sock
     commands:
-      - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline
+      - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline:latest
     when:
       branch: staging
     depends_on:

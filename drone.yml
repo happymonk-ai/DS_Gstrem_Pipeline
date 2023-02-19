@@ -4,27 +4,21 @@ name: ds_pipeline
 
 steps:
   - name: build
-    image: docker
-    volume_mounts:
-      - name: docker_sock
-        path: /var/run/docker.sock
+    image: docker:dind
+    trusted: true
+    privileged: true
     commands:
-      - docker run --rm --gpus all nvidia/cuda nvidia-smi
-      - docker build -t ds_gstreamer_pipeline:latest
+      - dockerd --host=unix:///drone/docker.sock &
+      - docker-compose build
 
   - name: deploy
-    image: docker
-    volume_mounts:
-      - name: docker_sock
-        path: /var/run/docker.sock
+    image: docker:dind
+    trusted: true
+    privileged: true
     commands:
-      - docker run --gpus all --name=ds_gstreamer_pipeline ds_gstreamer_pipeline:latest
+      - dockerd --host=unix:///drone/docker.sock &
+      - docker compose up -d
     when:
       branch: staging
     depends_on:
       - build
-
-volumes:
-  - name: docker_sock
-    host:
-      path: /var/run/docker.sock

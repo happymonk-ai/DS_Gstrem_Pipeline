@@ -13,6 +13,8 @@ steps:
 
   - name: deploy
     image: docker/compose:1.29.2
+    trusted: true
+    privileged: true
     commands:
 #       - dockerd --host=unix:///drone/docker.sock
       - docker compose up -d

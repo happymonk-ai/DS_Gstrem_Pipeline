@@ -6,7 +6,7 @@ steps:
   - name: build
     image: docker:dind
     commands:
-      - dockerd --host=unix:///drone/docker.sock
+#       - dockerd --host=unix:///drone/docker.sock
       - docker-compose build
 
 #   - name: deploy

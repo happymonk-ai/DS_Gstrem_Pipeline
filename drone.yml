@@ -4,19 +4,13 @@ name: ds_pipeline
 
 steps:
   - name: build
-    image: plugins/docker
-    volume_mounts:
-      - name: docker_sock
-        path: /var/run/docker.sock
+    image: docker/compose:1.29.2
     commands:
       - dockerd --host=unix:///drone/docker.sock
       - docker compose build
 
   - name: deploy
-    image: plugins/docker
-    volume_mounts:
-      - name: docker_sock
-        path: /var/run/docker.sock
+    image: docker/compose:1.29.2
     commands:
       - dockerd --host=unix:///drone/docker.sock
       - docker compose up -d
@@ -24,8 +18,3 @@ steps:
       branch: staging
     depends_on:
       - build
-      
-volumes:
-  - name: docker_sock
-    host:
-      path: /var/run/docker.sock

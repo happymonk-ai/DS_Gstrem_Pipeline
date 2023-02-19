@@ -11,12 +11,12 @@ steps:
       - dockerd --host=unix:///drone/docker.sock
       - docker-compose build
 
-#   - name: deploy
-#     image: docker/compose:1.29.2
-#     commands:
-#       - dockerd --host=unix:///drone/docker.sock
-#       - docker compose up -d
-#     when:
-#       branch: staging
-#     depends_on:
-#       - build
+  - name: deploy
+    image: docker/compose:1.29.2
+    commands:
+      - dockerd --host=unix:///drone/docker.sock
+      - docker compose up -d
+    when:
+      branch: staging
+    depends_on:
+      - build

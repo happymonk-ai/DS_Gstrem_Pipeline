@@ -8,7 +8,7 @@ steps:
     trusted: true
     privileged: true
     commands:
-      - dockerd --host=unix:///drone/docker.sock
+      - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &    
       - docker-compose build
 
   - name: deploy

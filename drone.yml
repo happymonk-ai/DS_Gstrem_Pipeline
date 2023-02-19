@@ -11,7 +11,7 @@ steps:
       - name: docker_sock
         path: /var/run/docker.sock
     commands:
-      - service docker start
+      - dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375
       - docker run --rm --gpus all nvidia/cuda nvidia-smi
       - docker build -t ds_gstreamer_pipeline
 

@@ -5,7 +5,6 @@ name: ds_pipeline
 steps:
   - name: build
     image: plugins/docker
-    trusted: true
     volume_mounts:
       - name: docker_sock
         path: /var/run/docker.sock
@@ -15,7 +14,6 @@ steps:
 
   - name: deploy
     image: plugins/docker
-    trusted: true
     volume_mounts:
       - name: docker_sock
         path: /var/run/docker.sock
